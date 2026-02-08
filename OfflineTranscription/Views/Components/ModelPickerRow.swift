@@ -4,7 +4,13 @@ struct ModelPickerRow: View {
     let model: ModelInfo
     let isSelected: Bool
     let isDownloaded: Bool
+    let isDownloading: Bool = false
+    let downloadProgress: Double = 0.0
     let onTap: () -> Void
+
+    private var clampedProgress: Double {
+        min(max(downloadProgress, 0.0), 1.0)
+    }
 
     var body: some View {
         Button(action: onTap) {
@@ -34,6 +40,15 @@ struct ModelPickerRow: View {
                     Text("Size: \(model.sizeOnDisk)")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
+
+                    if isDownloading {
+                        ProgressView(value: clampedProgress)
+                            .tint(.blue)
+                            .padding(.top, 4)
+                        Text("Downloading \(Int(clampedProgress * 100))%")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")

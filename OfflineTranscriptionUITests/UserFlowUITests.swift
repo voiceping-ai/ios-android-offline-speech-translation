@@ -28,7 +28,7 @@ final class UserFlowUITests: XCTestCase {
     // MARK: - Test 1: App Launch and Model Load
 
     func test_01_appLaunchAndModelLoad() {
-        let app = launchApp(modelId: "whisper-tiny")
+        let app = launchApp(modelId: "sensevoice-small")
 
         captureScreenshot(app, step: "01_launch")
 
@@ -53,7 +53,7 @@ final class UserFlowUITests: XCTestCase {
     // MARK: - Test 2: Test File Transcription
 
     func test_02_testFileTranscription() {
-        let app = launchApp(modelId: "whisper-tiny")
+        let app = launchApp(modelId: "sensevoice-small")
         waitForModelLoad(app)
 
         // Verify idle state
@@ -94,7 +94,7 @@ final class UserFlowUITests: XCTestCase {
     // MARK: - Test 3: Record Button States
 
     func test_03_recordButtonStates() {
-        let app = launchApp(modelId: "whisper-tiny")
+        let app = launchApp(modelId: "sensevoice-small")
         waitForModelLoad(app)
 
         // Handle mic permission alert
@@ -151,7 +151,7 @@ final class UserFlowUITests: XCTestCase {
     // MARK: - Test 4: Settings Navigation
 
     func test_04_settingsNavigation() {
-        let app = launchApp(modelId: "whisper-tiny", additionalArgs: ["--reset-state"])
+        let app = launchApp(modelId: "sensevoice-small", additionalArgs: ["--reset-state"])
         waitForModelLoad(app)
 
         // Dismiss any translation error alerts from default-enabled translation
@@ -175,8 +175,8 @@ final class UserFlowUITests: XCTestCase {
         let currentModel = app.staticTexts["settings_current_model"]
         XCTAssertTrue(currentModel.exists, "Current model name should be displayed")
         XCTAssertTrue(
-            currentModel.label.contains("Whisper Tiny"),
-            "Current model should be Whisper Tiny, got: \(currentModel.label)"
+            currentModel.label.contains("SenseVoice Small"),
+            "Current model should be SenseVoice Small, got: \(currentModel.label)"
         )
 
         // Scroll down past all model rows to reach toggle section
@@ -229,7 +229,7 @@ final class UserFlowUITests: XCTestCase {
     // MARK: - Test 5: Save and History
 
     func test_05_saveAndHistory() {
-        let app = launchApp(modelId: "whisper-tiny")
+        let app = launchApp(modelId: "sensevoice-small")
         waitForModelLoad(app)
 
         // Transcribe test file
@@ -283,7 +283,7 @@ final class UserFlowUITests: XCTestCase {
     // MARK: - Test 6: History Empty State and Delete
 
     func test_06_historyEmptyAndDelete() {
-        let app = launchApp(modelId: "whisper-tiny", additionalArgs: ["--reset-state"])
+        let app = launchApp(modelId: "sensevoice-small", additionalArgs: ["--reset-state"])
         waitForModelLoad(app)
 
         // Go to History — should be empty
@@ -350,7 +350,7 @@ final class UserFlowUITests: XCTestCase {
 
     func test_07_overflowMenuCopyAndClear() {
         // Reset state to clear any leftover translation settings from previous runs
-        let app = launchApp(modelId: "whisper-tiny", additionalArgs: ["--reset-state"])
+        let app = launchApp(modelId: "sensevoice-small", additionalArgs: ["--reset-state"])
         waitForModelLoad(app)
 
         // Transcribe
@@ -399,7 +399,7 @@ final class UserFlowUITests: XCTestCase {
     // MARK: - Test 8: Model Switch in Settings
 
     func test_08_modelSwitchInSettings() {
-        let app = launchApp(modelId: "whisper-tiny")
+        let app = launchApp(modelId: "sensevoice-small")
         waitForModelLoad(app)
 
         // Verify initial model
@@ -415,18 +415,18 @@ final class UserFlowUITests: XCTestCase {
         let settingsTitle = app.navigationBars["Settings"]
         XCTAssertTrue(settingsTitle.waitForExistence(timeout: shortTimeout))
 
-        // Tap Moonshine Tiny model row
-        let moonshineRow = app.buttons["model_row_moonshine-tiny"]
+        // Tap Parakeet TDT model row (second model in this repo)
+        let parakeetRow = app.buttons["model_row_parakeet-tdt-v3"]
         // May need to scroll to find it
-        if !moonshineRow.waitForExistence(timeout: 3) {
+        if !parakeetRow.waitForExistence(timeout: 3) {
             app.swipeUp()
             sleep(1)
         }
         XCTAssertTrue(
-            moonshineRow.waitForExistence(timeout: shortTimeout),
-            "Moonshine Tiny row should exist in settings"
+            parakeetRow.waitForExistence(timeout: shortTimeout),
+            "Parakeet TDT row should exist in settings"
         )
-        moonshineRow.tap()
+        parakeetRow.tap()
 
         captureScreenshot(app, step: "02_switching")
 
@@ -452,7 +452,7 @@ final class UserFlowUITests: XCTestCase {
     // MARK: - Test 9: Tab Switch Preserves State
 
     func test_09_tabSwitchPreservesState() {
-        let app = launchApp(modelId: "whisper-tiny")
+        let app = launchApp(modelId: "sensevoice-small")
         waitForModelLoad(app)
 
         // Transcribe
@@ -527,10 +527,10 @@ final class UserFlowUITests: XCTestCase {
         captureScreenshot(app, step: "02_model_list")
 
         // Verify at least one model family header is visible
-        let whisperHeader = app.staticTexts["Whisper"]
+        let senseVoiceHeader = app.staticTexts["SenseVoice"]
         XCTAssertTrue(
-            whisperHeader.waitForExistence(timeout: shortTimeout),
-            "Whisper family header should be visible in model picker"
+            senseVoiceHeader.waitForExistence(timeout: shortTimeout),
+            "SenseVoice family header should be visible in model picker"
         )
     }
 

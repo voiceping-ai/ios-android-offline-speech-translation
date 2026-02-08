@@ -27,7 +27,7 @@ class UserFlowE2ETest {
     companion object {
         private const val TAG = "UserFlowE2E"
         private const val PACKAGE = "com.voiceping.offlinetranscription"
-        private const val DEFAULT_MODEL = "moonshine-tiny"
+        private const val DEFAULT_MODEL = "sensevoice-small"
         private const val LAUNCH_TIMEOUT = 10_000L
         private const val MODEL_LOAD_TIMEOUT = 120_000L
         private const val SHORT_WAIT = 3_000L
@@ -293,32 +293,29 @@ class UserFlowE2ETest {
         takeScreenshot(dir, "02_setup_screen.png")
         Log.i(TAG, "[$testName] Setup screen visible after Change Model")
 
-        // Select a model (scroll to find Moonshine Tiny or fall back to Whisper Tiny)
+        // Select a model (find SenseVoice Small — the only model in this repo)
         // Wrapped in try-catch for StaleObjectException (Compose recomposition race)
         try {
-            var moonshineRow = device.findObject(By.textContains("Moonshine Tiny"))
-            if (moonshineRow == null) {
+            var modelRow = device.findObject(By.textContains("SenseVoice Small"))
+            if (modelRow == null) {
                 device.swipe(
                     device.displayWidth / 2, device.displayHeight * 3 / 4,
                     device.displayWidth / 2, device.displayHeight / 4,
                     20
                 )
                 Thread.sleep(1_000)
-                moonshineRow = device.findObject(By.textContains("Moonshine Tiny"))
+                modelRow = device.findObject(By.textContains("SenseVoice Small"))
             }
-            if (moonshineRow != null) {
-                moonshineRow.click()
-                Log.i(TAG, "[$testName] Selected Moonshine Tiny")
+            if (modelRow != null) {
+                modelRow.click()
+                Log.i(TAG, "[$testName] Selected SenseVoice Small")
             } else {
-                val whisperRow = device.findObject(By.textContains("Whisper Tiny"))
-                whisperRow?.click()
-                Log.w(TAG, "[$testName] Moonshine not found, selected Whisper Tiny")
+                Log.w(TAG, "[$testName] SenseVoice Small not found on setup screen")
             }
         } catch (e: androidx.test.uiautomator.StaleObjectException) {
             Log.w(TAG, "[$testName] StaleObjectException during model selection — retrying")
             Thread.sleep(2_000)
-            val retryRow = device.findObject(By.textContains("Moonshine Tiny"))
-                ?: device.findObject(By.textContains("Whisper Tiny"))
+            val retryRow = device.findObject(By.textContains("SenseVoice Small"))
             retryRow?.click()
         }
         Thread.sleep(2_000)

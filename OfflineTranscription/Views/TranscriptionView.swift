@@ -238,7 +238,8 @@ struct TranscriptionView: View {
                 #if DEBUG
                 if let vm = viewModel, !vm.isRecording {
                     Button {
-                        vm.transcribeTestFile("/tmp/test_speech.wav")
+                        let wavPath = Bundle.main.path(forResource: "test_speech", ofType: "wav") ?? "/tmp/test_speech.wav"
+                        vm.transcribeTestFile(wavPath)
                     } label: {
                         Image(systemName: "doc.text.fill")
                             .font(.title2)
@@ -359,7 +360,8 @@ struct TranscriptionView: View {
             guard !didAutoTest else { return }
             didAutoTest = true
             try? await Task.sleep(for: .milliseconds(500))
-            viewModel?.transcribeTestFile("/tmp/test_speech.wav")
+            let wavPath = Bundle.main.path(forResource: "test_speech", ofType: "wav") ?? "/tmp/test_speech.wav"
+            viewModel?.transcribeTestFile(wavPath)
         }
         #endif
     }

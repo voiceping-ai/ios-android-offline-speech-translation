@@ -1,7 +1,13 @@
 package com.voiceping.offlinetranscription.model
 
 enum class EngineType { WHISPER_CPP, SHERPA_ONNX, SHERPA_ONNX_STREAMING }
-enum class SherpaModelType { MOONSHINE, SENSE_VOICE, ZIPFORMER_TRANSDUCER, OMNILINGUAL_CTC }
+enum class SherpaModelType {
+    MOONSHINE,
+    SENSE_VOICE,
+    ZIPFORMER_TRANSDUCER,
+    OMNILINGUAL_CTC,
+    PARAKEET_NEMO_TRANSDUCER,
+}
 
 data class ModelFile(val url: String, val localName: String)
 
@@ -26,6 +32,8 @@ data class ModelInfo(
     companion object {
         private const val SENSEVOICE_BASE_URL =
             "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/"
+        private const val PARAKEET_BASE_URL =
+            "https://huggingface.co/k2-fsa/sherpa-onnx-nemo-ctc-en-parakeet-tdt-0.6b-v2/resolve/main/"
 
         val availableModels = listOf(
             // -- SenseVoice (sherpa-onnx) --
@@ -41,6 +49,23 @@ data class ModelInfo(
                 files = listOf(
                     ModelFile("${SENSEVOICE_BASE_URL}model.int8.onnx", "model.int8.onnx"),
                     ModelFile("${SENSEVOICE_BASE_URL}tokens.txt", "tokens.txt"),
+                )
+            ),
+            // -- Parakeet TDT (sherpa-onnx NeMo transducer) --
+            ModelInfo(
+                id = "parakeet-tdt-0.6b-v2-int8",
+                displayName = "Parakeet TDT 0.6B",
+                engineType = EngineType.SHERPA_ONNX,
+                sherpaModelType = SherpaModelType.PARAKEET_NEMO_TRANSDUCER,
+                parameterCount = "600M",
+                sizeOnDisk = "~660 MB",
+                description = "High-accuracy English model (NeMo Parakeet-TDT).",
+                languages = "English",
+                files = listOf(
+                    ModelFile("${PARAKEET_BASE_URL}encoder.int8.onnx", "encoder.int8.onnx"),
+                    ModelFile("${PARAKEET_BASE_URL}decoder.int8.onnx", "decoder.int8.onnx"),
+                    ModelFile("${PARAKEET_BASE_URL}joiner.int8.onnx", "joiner.int8.onnx"),
+                    ModelFile("${PARAKEET_BASE_URL}tokens.txt", "tokens.txt"),
                 )
             ),
         )

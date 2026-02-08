@@ -88,6 +88,8 @@ fun ModelSetupScreen(viewModel: ModelSetupViewModel) {
                         model = model,
                         isSelected = selectedModel.id == model.id,
                         isDownloaded = viewModel.isModelDownloaded(model),
+                        isDownloading = modelState == ModelState.Downloading && selectedModel.id == model.id,
+                        downloadProgress = downloadProgress,
                         enabled = !isBusy,
                         onClick = { viewModel.selectAndSetup(model) }
                     )
@@ -96,30 +98,8 @@ fun ModelSetupScreen(viewModel: ModelSetupViewModel) {
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Download / Loading progress
-            if (modelState == ModelState.Downloading) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Downloading ${selectedModel.displayName}...",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    LinearProgressIndicator(
-                        progress = { downloadProgress },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${(downloadProgress * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else if (modelState == ModelState.Loading) {
+            // Loading progress
+            if (modelState == ModelState.Loading) {
                 Spacer(modifier = Modifier.height(16.dp))
                 CircularProgressIndicator()
                 Spacer(modifier = Modifier.height(8.dp))
@@ -142,6 +122,6 @@ fun ModelSetupScreen(viewModel: ModelSetupViewModel) {
 
 private fun engineLabel(type: EngineType): String = when (type) {
     EngineType.WHISPER_CPP -> "Whisper (whisper.cpp)"
-    EngineType.SHERPA_ONNX -> "Moonshine / SenseVoice / Omnilingual (sherpa-onnx)"
+    EngineType.SHERPA_ONNX -> "SenseVoice / Parakeet (sherpa-onnx)"
     EngineType.SHERPA_ONNX_STREAMING -> "Streaming (sherpa-onnx)"
 }

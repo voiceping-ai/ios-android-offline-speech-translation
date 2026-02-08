@@ -8,6 +8,7 @@ import com.k2fsa.sherpa.onnx.OfflineOmnilingualAsrCtcModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import com.voiceping.offlinetranscription.model.SherpaModelType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,7 +17,7 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 /**
- * ASR engine backed by sherpa-onnx for Moonshine, SenseVoice, and Omnilingual models.
+ * ASR engine backed by sherpa-onnx for offline models such as SenseVoice and Parakeet.
  * Expects a model directory containing the required ONNX files + tokens.txt.
  *
  * All access to [recognizer] is guarded by [lock] so that release()
@@ -125,6 +126,19 @@ class SherpaOnnxEngine(
                 numThreads = threads,
                 debug = false,
                 provider = "cpu",
+            )
+            SherpaModelType.PARAKEET_NEMO_TRANSDUCER -> OfflineModelConfig(
+                transducer = OfflineTransducerModelConfig(
+                    encoder = findFile(modelDir, "encoder"),
+                    decoder = findFile(modelDir, "decoder"),
+                    joiner = findFile(modelDir, "joiner"),
+                ),
+                tokens = tokensPath,
+                numThreads = threads,
+                debug = false,
+                provider = "cpu",
+                // Required by sherpa-onnx for NeMo transducer exports (Parakeet-TDT).
+                modelType = "nemo_transducer",
             )
         }
 

@@ -64,7 +64,20 @@ class MainActivity : ComponentActivity() {
                             isLoading = false
 
                             delay(500)
-                            app.whisperEngine.transcribeFile("/data/local/tmp/test_speech.wav")
+                            // Prefer adb-pushed file (E2E scripts), fall back to bundled asset
+                            val adbFile = java.io.File("/data/local/tmp/test_speech.wav")
+                            val wavPath = if (adbFile.exists()) {
+                                adbFile.absolutePath
+                            } else {
+                                val cached = java.io.File(cacheDir, "test_speech.wav")
+                                if (!cached.exists()) {
+                                    assets.open("test_speech.wav").use { input ->
+                                        cached.outputStream().use { output -> input.copyTo(output) }
+                                    }
+                                }
+                                cached.absolutePath
+                            }
+                            app.whisperEngine.transcribeFile(wavPath)
                         } else {
                             Log.e("E2E", "Model $e2eModelId not found")
                             app.whisperEngine.loadModelIfAvailable()

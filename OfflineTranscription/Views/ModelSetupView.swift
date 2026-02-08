@@ -5,6 +5,9 @@ struct ModelSetupView: View {
     @State private var viewModel: ModelManagementViewModel?
 
     var body: some View {
+        let isBusy = whisperService.modelState == .downloading
+            || whisperService.modelState == .loading
+
         NavigationStack {
             VStack(spacing: 24) {
                 // Header
@@ -35,20 +38,24 @@ struct ModelSetupView: View {
                                     .foregroundStyle(.secondary)
 
                                 ForEach(group.models) { model in
+                                    let isSelectedModel = whisperService.selectedModel.id == model.id
+                                    let isDownloadingSelectedModel =
+                                        whisperService.modelState == .downloading
+                                        && isSelectedModel
+
                                     ModelPickerRow(
                                         model: model,
-                                        isSelected: whisperService.selectedModel.id == model.id,
-                                        isDownloaded: viewModel?.isModelDownloaded(model) ?? false
+                                        isSelected: isSelectedModel,
+                                        isDownloaded: viewModel?.isModelDownloaded(model) ?? false,
+                                        isDownloading: isDownloadingSelectedModel,
+                                        downloadProgress: whisperService.downloadProgress
                                     ) {
                                         whisperService.selectedModel = model
                                         Task {
                                             await viewModel?.downloadAndSetup()
                                         }
                                     }
-                                    .disabled(
-                                        whisperService.modelState == .downloading
-                                        || whisperService.modelState == .loading
-                                    )
+                                    .disabled(isBusy)
                                 }
                             }
                         }
@@ -60,24 +67,9 @@ struct ModelSetupView: View {
 
                 // Progress / Status
                 VStack(spacing: 16) {
-                    if whisperService.modelState == .downloading {
-                        VStack(spacing: 8) {
-                            ProgressView(value: whisperService.downloadProgress) {
-                                Text(
-                                    "Downloading \(whisperService.selectedModel.displayName)..."
-                                )
-                                .font(.subheadline)
-                            }
-                            Text(
-                                "\(Int(whisperService.downloadProgress * 100))%"
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal)
-                    } else if whisperService.modelState == .loading {
+                    if whisperService.modelState == .loading {
                         ProgressView("Loading model...")
-                    } else {
+                    } else if whisperService.modelState != .downloading {
                         Text("Tap a model to download and get started.")
                             .font(.subheadline)
                             .foregroundStyle(.tertiary)

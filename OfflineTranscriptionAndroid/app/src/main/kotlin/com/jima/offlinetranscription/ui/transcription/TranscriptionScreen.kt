@@ -337,7 +337,7 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
                 Spacer(modifier = Modifier.width(12.dp))
 
                 IconButton(
-                    onClick = { viewModel.transcribeTestFile("/data/local/tmp/test_speech.wav") },
+                    onClick = { viewModel.transcribeTestAsset(context) },
                     enabled = !isRecording,
                     modifier = Modifier.semantics { contentDescription = "Test Audio File" }
                 ) {
