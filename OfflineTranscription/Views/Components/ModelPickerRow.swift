@@ -59,6 +59,11 @@ struct ModelPickerRow: View {
                     Text("Size: \(model.sizeOnDisk)")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
+                    if let note = model.availabilityNote {
+                        Text(note)
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
 
                     if isDownloading {
                         ProgressView(value: clampedProgress)

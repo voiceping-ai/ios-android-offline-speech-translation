@@ -80,7 +80,7 @@ struct ModelSetupView: View {
                 await viewModel?.downloadAndSetup()
             }
         }
-        .disabled(isBusy)
+        .disabled(isBusy || !model.isSelectable)
     }
 
     @ViewBuilder

@@ -9,12 +9,45 @@ struct ModelInfo: Identifiable, Hashable {
     let family: ModelFamily
     let engineType: ASREngineType
     let languages: String
+    let inferenceMethodOverride: String?
+    let isSelectable: Bool
+    let availabilityNote: String?
 
     /// WhisperKit variant name (e.g. "openai_whisper-tiny"). Only for WhisperKit models.
     let variant: String?
 
     /// sherpa-onnx model config. Only for sherpa-onnx models.
     let sherpaModelConfig: SherpaModelConfig?
+
+    init(
+        id: String,
+        displayName: String,
+        parameterCount: String,
+        sizeOnDisk: String,
+        description: String,
+        family: ModelFamily,
+        engineType: ASREngineType,
+        languages: String,
+        inferenceMethodOverride: String? = nil,
+        isSelectable: Bool = true,
+        availabilityNote: String? = nil,
+        variant: String? = nil,
+        sherpaModelConfig: SherpaModelConfig? = nil
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.parameterCount = parameterCount
+        self.sizeOnDisk = sizeOnDisk
+        self.description = description
+        self.family = family
+        self.engineType = engineType
+        self.languages = languages
+        self.inferenceMethodOverride = inferenceMethodOverride
+        self.isSelectable = isSelectable
+        self.availabilityNote = availabilityNote
+        self.variant = variant
+        self.sherpaModelConfig = sherpaModelConfig
+    }
 
     static let availableModels: [ModelInfo] = [
         // MARK: - SenseVoice (sherpa-onnx offline)
@@ -48,11 +81,31 @@ struct ModelInfo: Identifiable, Hashable {
             variant: nil,
             sherpaModelConfig: nil
         ),
+        // MARK: - ik_llama.cpp (cross-platform card)
+        ModelInfo(
+            id: "tinyllama-1.1b-ik-llama-cpp",
+            displayName: "TinyLlama 1.1B (ik_llama.cpp)",
+            parameterCount: "1.1B",
+            sizeOnDisk: "~600 MB",
+            description: "GGUF model card for ik_llama.cpp mobile inference.",
+            family: .llm,
+            engineType: .sherpaOnnxOffline,
+            languages: "General text generation",
+            inferenceMethodOverride: "ik_llama.cpp (GGUF; Metal on iOS, NDK/JNI on Android)",
+            isSelectable: false,
+            availabilityNote: "Card only. Hook up ik_llama.cpp runtime bridge to enable loading and inference.",
+            variant: nil,
+            sherpaModelConfig: nil
+        ),
     ]
 
     static let defaultModel = availableModels.first { $0.id == "sensevoice-small" }!
 
     var inferenceMethodLabel: String {
+        if let override = inferenceMethodOverride {
+            return override
+        }
+
         switch engineType {
         case .whisperKit:
             return "CoreML (WhisperKit)"
@@ -76,7 +129,7 @@ struct ModelInfo: Identifiable, Hashable {
     /// Models grouped by family for UI display.
     static var modelsByFamily: [(family: ModelFamily, models: [ModelInfo])] {
         let grouped = Dictionary(grouping: availableModels, by: \.family)
-        let order: [ModelFamily] = [.whisper, .moonshine, .senseVoice, .zipformer, .omnilingual, .parakeet]
+        let order: [ModelFamily] = [.whisper, .moonshine, .senseVoice, .zipformer, .omnilingual, .parakeet, .llm]
         return order.compactMap { family in
             guard let models = grouped[family], !models.isEmpty else { return nil }
             return (family: family, models: models)

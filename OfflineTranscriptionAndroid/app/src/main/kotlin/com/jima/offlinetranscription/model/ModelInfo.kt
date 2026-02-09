@@ -20,13 +20,19 @@ data class ModelInfo(
     val sizeOnDisk: String,
     val description: String,
     val languages: String = "99 languages",
-    val files: List<ModelFile>
+    val files: List<ModelFile>,
+    val inferenceMethodOverride: String? = null,
+    val isSelectable: Boolean = true,
+    val availabilityNote: String? = null,
 ) {
     val inferenceMethod: String
-        get() = when (engineType) {
-            EngineType.WHISPER_CPP -> "whisper.cpp (C++/JNI)"
-            EngineType.SHERPA_ONNX -> "sherpa-onnx offline (ONNX Runtime)"
-            EngineType.SHERPA_ONNX_STREAMING -> "sherpa-onnx streaming (ONNX Runtime)"
+        get() {
+            inferenceMethodOverride?.let { return it }
+            return when (engineType) {
+                EngineType.WHISPER_CPP -> "whisper.cpp (C++/JNI)"
+                EngineType.SHERPA_ONNX -> "sherpa-onnx offline (ONNX Runtime)"
+                EngineType.SHERPA_ONNX_STREAMING -> "sherpa-onnx streaming (ONNX Runtime)"
+            }
         }
 
     companion object {
@@ -67,6 +73,20 @@ data class ModelInfo(
                     ModelFile("${PARAKEET_BASE_URL}joiner.int8.onnx", "joiner.int8.onnx"),
                     ModelFile("${PARAKEET_BASE_URL}tokens.txt", "tokens.txt"),
                 )
+            ),
+            // -- ik_llama.cpp (cross-platform card) --
+            ModelInfo(
+                id = "tinyllama-1.1b-ik-llama-cpp",
+                displayName = "TinyLlama 1.1B (ik_llama.cpp)",
+                engineType = EngineType.SHERPA_ONNX,
+                parameterCount = "1.1B",
+                sizeOnDisk = "~600 MB",
+                description = "GGUF model card for ik_llama.cpp mobile inference.",
+                languages = "General text generation",
+                files = emptyList(),
+                inferenceMethodOverride = "ik_llama.cpp (GGUF; Metal on iOS, NDK/JNI on Android)",
+                isSelectable = false,
+                availabilityNote = "Card only. Hook up ik_llama.cpp runtime bridge to enable loading and inference.",
             ),
         )
 

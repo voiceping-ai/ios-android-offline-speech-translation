@@ -11,9 +11,10 @@ class ModelInfoTest {
     @Test
     fun availableModels_hasExpectedEntries() {
         val ids = ModelInfo.availableModels.map { it.id }
-        assertEquals(2, ids.size)
+        assertEquals(3, ids.size)
         assertTrue("sensevoice-small" in ids)
         assertTrue("parakeet-tdt-0.6b-v2-int8" in ids)
+        assertTrue("tinyllama-1.1b-ik-llama-cpp" in ids)
     }
 
     @Test
@@ -74,9 +75,10 @@ class ModelInfoTest {
         val grouped = ModelInfo.modelsByEngine
         val sherpa = grouped[EngineType.SHERPA_ONNX]
         assertNotNull(sherpa)
-        assertEquals(2, sherpa.size)
+        assertEquals(3, sherpa.size)
         assertTrue(sherpa.any { it.id == "sensevoice-small" })
         assertTrue(sherpa.any { it.id == "parakeet-tdt-0.6b-v2-int8" })
+        assertTrue(sherpa.any { it.id == "tinyllama-1.1b-ik-llama-cpp" })
         assertNull(grouped[EngineType.WHISPER_CPP])
         assertNull(grouped[EngineType.SHERPA_ONNX_STREAMING])
     }
@@ -108,5 +110,13 @@ class ModelInfoTest {
         val b = a.copy()
         assertEquals(a, b)
     }
-}
 
+    @Test
+    fun ikLlamaCard_isInformationalOnly() {
+        val model = ModelInfo.availableModels.first { it.id == "tinyllama-1.1b-ik-llama-cpp" }
+        assertEquals(false, model.isSelectable)
+        assertEquals(0, model.files.size)
+        assertTrue(model.inferenceMethod.contains("ik_llama.cpp"))
+        assertNotNull(model.availabilityNote)
+    }
+}

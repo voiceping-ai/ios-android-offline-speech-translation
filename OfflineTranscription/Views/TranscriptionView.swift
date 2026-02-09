@@ -496,6 +496,11 @@ struct ModelSettingsSheet: View {
                                         Text("Inference: \(model.inferenceMethodLabel)")
                                             .font(.caption2)
                                             .foregroundStyle(.tertiary)
+                                        if let note = model.availabilityNote {
+                                            Text(note)
+                                                .font(.caption2)
+                                                .foregroundStyle(.orange)
+                                        }
                                     }
                                     Spacer()
                                     VStack(alignment: .trailing) {
@@ -512,6 +517,7 @@ struct ModelSettingsSheet: View {
                             .disabled(
                                 model.id == whisperService.selectedModel.id
                                 || isSwitching
+                                || !model.isSelectable
                             )
                         }
                     }

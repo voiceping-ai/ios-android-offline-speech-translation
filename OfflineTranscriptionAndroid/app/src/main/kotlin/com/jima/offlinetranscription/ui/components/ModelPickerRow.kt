@@ -91,6 +91,13 @@ fun ModelPickerRow(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    model.availabilityNote?.let { note ->
+                        Text(
+                            text = note,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
 
                 Column(horizontalAlignment = Alignment.End) {

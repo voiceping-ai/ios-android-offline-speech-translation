@@ -91,7 +91,7 @@ fun ModelSetupScreen(viewModel: ModelSetupViewModel) {
                         isDownloading = modelState == ModelState.Downloading && selectedModel.id == model.id,
                         downloadProgress = downloadProgress,
                         isLoading = modelState == ModelState.Loading && selectedModel.id == model.id,
-                        enabled = !isBusy,
+                        enabled = !isBusy && model.isSelectable,
                         onClick = { viewModel.selectAndSetup(model) }
                     )
                     Spacer(modifier = Modifier.height(8.dp))

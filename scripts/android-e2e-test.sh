@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ADB="${ADB_PATH:-$HOME/Library/Android/sdk/platform-tools/adb}"
-PACKAGE="com.voiceping.offlinetranscription"
+PACKAGE="${PACKAGE:-}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$PROJECT_DIR/artifacts/e2e/android}"
 WAV_SOURCE="${EVAL_WAV_PATH:-$PROJECT_DIR/artifacts/benchmarks/long_en_eval.wav}"
 GRADLE_DIR="$PROJECT_DIR/OfflineTranscriptionAndroid"
@@ -16,14 +16,34 @@ TEST_CLASS="com.voiceping.offlinetranscription.e2e.AllModelsE2ETest"
 INSTRUMENT_TIMEOUT_SEC="${INSTRUMENT_TIMEOUT_SEC:-480}"
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 
+if [ -z "$PACKAGE" ]; then
+    PACKAGE=$(python3 - <<'PY'
+import pathlib, re, sys
+p = pathlib.Path("OfflineTranscriptionAndroid/app/build.gradle.kts")
+txt = p.read_text(encoding="utf-8")
+m = re.search(r'applicationId\s*=\s*"([^"]+)"', txt)
+if not m:
+    sys.exit(1)
+print(m.group(1))
+PY
+)
+fi
+
+if [ -z "$PACKAGE" ]; then
+    echo "ERROR: could not resolve Android applicationId"
+    exit 1
+fi
+
 ALL_MODELS=(
     "sensevoice-small"
+    "parakeet-tdt-0.6b-v2-int8"
 )
 
 # Map model-id to test method name
 typeset -A TEST_METHODS
 TEST_METHODS=(
     sensevoice-small test_sensevoiceSmall
+    parakeet-tdt-0.6b-v2-int8 test_parakeetTdtV3
 )
 
 # Use provided models or all
@@ -34,6 +54,7 @@ else
 fi
 
 echo "=== Android E2E Test Suite ==="
+echo "Package: $PACKAGE"
 echo "Models to test: ${MODELS[*]}"
 echo "Audio fixture: $WAV_SOURCE"
 echo "Per-model timeout: ${INSTRUMENT_TIMEOUT_SEC}s"
@@ -65,6 +86,14 @@ echo ""
 
 PASS_COUNT=0
 FAIL_COUNT=0
+
+instrument_timeout_for_model() {
+    local model_id="$1"
+    case "$model_id" in
+        parakeet-tdt-0.6b-v2-int8) echo 1800 ;;
+        *) echo "$INSTRUMENT_TIMEOUT_SEC" ;;
+    esac
+}
 
 ensure_instrumentation_installed() {
     if ! $ADB shell pm list instrumentation | grep -q "$PACKAGE.test/androidx.test.runner.AndroidJUnitRunner"; then
@@ -108,8 +137,10 @@ for MODEL_ID in "${MODELS[@]}"; do
     rm -rf "$MODEL_DIR"
     mkdir -p "$MODEL_DIR"
     METHOD=${TEST_METHODS[$MODEL_ID]}
+    MODEL_TIMEOUT_SEC=$(instrument_timeout_for_model "$MODEL_ID")
 
     echo "--- Testing: $MODEL_ID ($METHOD) ---"
+    echo "  Instrument timeout: ${MODEL_TIMEOUT_SEC}s"
     ensure_instrumentation_installed
     $ADB shell rm -rf "/sdcard/Documents/e2e/$MODEL_ID" 2>/dev/null || true
     $ADB shell rm -f "/sdcard/Android/data/$PACKAGE/files/e2e_result_${MODEL_ID}.json" 2>/dev/null || true
@@ -117,14 +148,14 @@ for MODEL_ID in "${MODELS[@]}"; do
     # Run individual test
     $ADB logcat -c
     set +e
-    RESULT=$(run_instrumentation_with_timeout "$METHOD" "$INSTRUMENT_TIMEOUT_SEC")
+    RESULT=$(run_instrumentation_with_timeout "$METHOD" "$MODEL_TIMEOUT_SEC")
     INSTRUMENT_EXIT=$?
     set -e
 
     if echo "$RESULT" | grep -q "OK (1 test)"; then
         echo "  Test passed"
     elif [ "$INSTRUMENT_EXIT" -eq 124 ] || echo "$RESULT" | grep -q "TIMEOUT:"; then
-        echo "  Test timed out after ${INSTRUMENT_TIMEOUT_SEC}s"
+        echo "  Test timed out after ${MODEL_TIMEOUT_SEC}s"
     else
         echo "  Test may have failed. Output:"
         echo "$RESULT" | tail -5

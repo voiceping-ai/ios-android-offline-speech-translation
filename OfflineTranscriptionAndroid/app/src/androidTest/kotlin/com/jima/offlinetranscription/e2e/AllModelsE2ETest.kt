@@ -26,17 +26,18 @@ import kotlin.test.assertTrue
 class AllModelsE2ETest {
     companion object {
         private const val TAG = "E2E"
-        private const val PACKAGE = "com.voiceping.offlinetranscription"
     }
 
     private lateinit var device: UiDevice
     private lateinit var context: Context
+    private lateinit var packageNameUnderTest: String
 
     // Per-model download+load+transcribe timeout (ms)
     // whisper.cpp on emulator is very slow — whisper-small needs ~500s, large-turbo ~1800s
     private fun timeout(modelId: String): Long = when {
         modelId.contains("large") -> 1_800_000L
         modelId.contains("omnilingual") -> 600_000L
+        modelId.contains("parakeet") -> 900_000L
         modelId.contains("small") -> 600_000L
         modelId.contains("base") -> 300_000L
         else -> 120_000L
@@ -46,6 +47,7 @@ class AllModelsE2ETest {
     fun setup() {
         device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         context = InstrumentationRegistry.getInstrumentation().context
+        packageNameUnderTest = InstrumentationRegistry.getInstrumentation().targetContext.packageName
     }
 
     // ---- Individual model tests ----
@@ -59,6 +61,7 @@ class AllModelsE2ETest {
     @Test fun test_moonshineTiny(): Unit = testModel("moonshine-tiny")
     @Test fun test_moonshineBase(): Unit = testModel("moonshine-base")
     @Test fun test_sensevoiceSmall(): Unit = testModel("sensevoice-small")
+    @Test fun test_parakeetTdtV3(): Unit = testModel("parakeet-tdt-0.6b-v2-int8")
     @Test fun test_omnilingual300m(): Unit = testModel("omnilingual-300m")
     @Test fun test_zipformer20m(): Unit = testModel("zipformer-20m")
 
@@ -66,7 +69,7 @@ class AllModelsE2ETest {
 
     private fun testModel(modelId: String) {
         val evidenceDir = "/sdcard/Documents/e2e/$modelId"
-        val resultSrc = "/sdcard/Android/data/$PACKAGE/files/e2e_result_$modelId.json"
+        val resultSrc = "/sdcard/Android/data/$packageNameUnderTest/files/e2e_result_$modelId.json"
         val timeoutMs = timeout(modelId)
 
         Log.i(TAG, "=== E2E Testing $modelId (timeout: ${timeoutMs / 1000}s) ===")
@@ -76,7 +79,7 @@ class AllModelsE2ETest {
         File(resultSrc).delete()
 
         // 2. Launch app via Intent (avoids am force-stop which kills test process)
-        val intent = context.packageManager.getLaunchIntentForPackage(PACKAGE)!!.apply {
+        val intent = context.packageManager.getLaunchIntentForPackage(packageNameUnderTest)!!.apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra("e2e_test", true)
             putExtra("model_id", modelId)
@@ -85,7 +88,7 @@ class AllModelsE2ETest {
         Log.i(TAG, "[$modelId] App launched with e2e_test=true")
 
         // 3. Wait for app to start, then screenshot
-        device.wait(Until.hasObject(By.pkg(PACKAGE).depth(0)), 10_000)
+        device.wait(Until.hasObject(By.pkg(packageNameUnderTest).depth(0)), 10_000)
         Thread.sleep(3000)
         takeScreenshot(evidenceDir, "01_model_selected.png")
         Log.i(TAG, "[$modelId] Screenshot 01 captured")

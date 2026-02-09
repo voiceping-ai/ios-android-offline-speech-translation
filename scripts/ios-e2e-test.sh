@@ -10,7 +10,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 SIMULATOR_ID="578CBE53-DFDD-4BC5-874C-5F96A59A5C64"
-BUNDLE_ID="com.voiceping.offline-transcription"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$PROJECT_DIR/artifacts/e2e/ios}"
 WAV_SOURCE="${EVAL_WAV_PATH:-$PROJECT_DIR/artifacts/benchmarks/long_en_eval.wav}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$PROJECT_DIR/build/DerivedData}"
@@ -173,9 +172,15 @@ if [ ! -d "$APP_PATH" ]; then
     exit 1
 fi
 
+APP_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist" 2>/dev/null || true)
+if [ -z "$APP_BUNDLE_ID" ]; then
+    echo "ERROR: could not resolve app bundle identifier from $APP_PATH/Info.plist"
+    exit 1
+fi
+
 # Install latest app
 xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
-echo "App installed."
+echo "App installed. Bundle ID: $APP_BUNDLE_ID"
 echo ""
 
 PASS_COUNT=0
@@ -190,7 +195,7 @@ for MODEL_ID in "${MODELS[@]}"; do
     echo "--- Testing: $MODEL_ID (timeout: ${WAIT}s) ---"
 
     # Terminate any running instance
-    xcrun simctl terminate "$SIMULATOR_ID" "$BUNDLE_ID" 2>/dev/null || true
+    xcrun simctl terminate "$SIMULATOR_ID" "$APP_BUNDLE_ID" 2>/dev/null || true
     sleep 2
 
     # Clean up previous result BEFORE launching
@@ -198,7 +203,7 @@ for MODEL_ID in "${MODELS[@]}"; do
     rm -f "$RESULT_FILE"
 
     # Launch with auto-test
-    xcrun simctl launch "$SIMULATOR_ID" "$BUNDLE_ID" --auto-test --model-id "$MODEL_ID" 2>/dev/null
+    xcrun simctl launch "$SIMULATOR_ID" "$APP_BUNDLE_ID" --auto-test --model-id "$MODEL_ID" 2>/dev/null
     echo "  Launched. Waiting for download + load + transcription..."
 
     # Take initial screenshot after brief delay

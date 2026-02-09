@@ -37,8 +37,9 @@ class AsrEngineTest {
 
     @Test
     fun allCurrentModels_areSherpaOfflineAndTyped() {
-        assertTrue(ModelInfo.availableModels.isNotEmpty())
-        ModelInfo.availableModels.forEach { model ->
+        val selectableModels = ModelInfo.availableModels.filter { it.isSelectable }
+        assertTrue(selectableModels.isNotEmpty())
+        selectableModels.forEach { model ->
             assertEquals(EngineType.SHERPA_ONNX, model.engineType, "Unexpected engine for ${model.id}")
             assertNotNull(model.sherpaModelType, "sherpaModelType must be set for ${model.id}")
             assertTrue(
@@ -75,4 +76,3 @@ class AsrEngineTest {
         assertTrue(streaming.isEmpty(), "Streaming catalog should be empty in this Android build")
     }
 }
-
