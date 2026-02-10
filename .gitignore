@@ -1,12 +1,18 @@
-# === macOS ===
+# === OS / Filesystem ===
 .DS_Store
 .AppleDouble
 .LSOverride
 ._*
+.Spotlight-V100
+.Trashes
 
-# === Xcode ===
+# === Xcode / Swift ===
 build/
 DerivedData/
+.build/
+.swiftpm/
+.swiftpm/xcode/xcuserdata/
+Package.resolved
 *.xcuserstate
 xcuserdata/
 *.xcworkspace/xcuserdata/
@@ -17,17 +23,41 @@ xcuserdata/
 *.moved-aside
 *.hmap
 *.ipa
-*.dSYM.zip
 *.dSYM
+*.dSYM.zip
+*.xcresult
+*.playground/
+.timeline
+.playgroundbook/
 
 # Xcode auto-generated but regeneratable via xcodegen
 VoicePingIOSAndroidOfflineSpeechTranslation.xcodeproj/project.pbxproj
 
-# Swift Package Manager
-.swiftpm/xcode/xcuserdata/
-Package.resolved
+# iOS dependency managers
+Pods/
+Carthage/Build/
 
-# === Android ===
+# === Android / Gradle ===
+.gradle/
+**/.gradle/
+build/
+**/build/
+local.properties
+.cxx/
+**/.cxx/
+.externalNativeBuild/
+captures/
+.kotlin/
+**/.kotlin/
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+*.hprof
+output-metadata.json
+
+# Repo path-specific Android outputs
 VoicePingIOSAndroidOfflineSpeechTranslationAndroid/.gradle/
 VoicePingIOSAndroidOfflineSpeechTranslationAndroid/build/
 VoicePingIOSAndroidOfflineSpeechTranslationAndroid/app/build/
@@ -37,20 +67,31 @@ VoicePingIOSAndroidOfflineSpeechTranslationAndroid/app/.cxx/
 VoicePingIOSAndroidOfflineSpeechTranslationAndroid/captures/
 VoicePingIOSAndroidOfflineSpeechTranslationAndroid/.kotlin/
 
-# Android Studio / IntelliJ
-VoicePingIOSAndroidOfflineSpeechTranslationAndroid/.idea/
-*.iml
-
 # sherpa-onnx binaries (download from GitHub releases, see README)
 VoicePingIOSAndroidOfflineSpeechTranslationAndroid/app/libs/*.aar
 LocalPackages/SherpaOnnxKit/*.xcframework/
 
+# === Room Schema Exports (using manual migrations) ===
+VoicePingIOSAndroidOfflineSpeechTranslationAndroid/app/schemas/
+
+# === Logs / Reports ===
+*.log
+logs/
+coverage/
+*.profraw
+*.profdata
+*.stackdump
+
 # === IDE ===
+VoicePingIOSAndroidOfflineSpeechTranslationAndroid/.idea/
 .idea/
+.vscode/
+*.iml
 *.swp
 *.swo
 *~
-.vscode/
+*.orig
+*.rej
 
 # === Secrets / Environment ===
 .env
@@ -60,19 +101,23 @@ LocalPackages/SherpaOnnxKit/*.xcframework/
 *.p12
 *.pem
 *.key
+*.mobileprovision
+*.provisionprofile
 google-services.json
 GoogleService-Info.plist
 
-# === Test Evidence / Screenshots ===
+# === Test Evidence / Artifacts ===
 artifacts/
 screenshots/
-
-# === Room Schema Exports (using manual migrations) ===
-VoicePingIOSAndroidOfflineSpeechTranslationAndroid/app/schemas/
-
-# === Claude Code ===
-.claude/
+tmp/
 
 # === Python cache ===
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# === Claude / AI tooling ===
+.claude/

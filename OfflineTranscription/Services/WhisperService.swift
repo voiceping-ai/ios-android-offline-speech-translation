@@ -53,6 +53,7 @@ final class WhisperService {
     private(set) var ttsStartCount: Int = 0
     private(set) var ttsMicGuardViolations: Int = 0
     private(set) var micStoppedForTTS: Bool = false
+    private(set) var detectedLanguage: String?
 
     // Configuration
     var selectedModel: ModelInfo = ModelInfo.defaultModel
@@ -529,7 +530,11 @@ final class WhisperService {
                 let result = try await engine.transcribe(audioArray: samples, options: options)
                 let elapsedMs = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
                 guard !Task.isCancelled else { return }
-                NSLog("[E2E] Transcription complete: text='\(result.text)', segments=\(result.segments.count)")
+                NSLog("[E2E] Transcription complete: text='\(result.text)', segments=\(result.segments.count), language=\(result.language ?? "nil")")
+                if let lang = result.language, !lang.isEmpty, lang != detectedLanguage {
+                    detectedLanguage = lang
+                    applyDetectedLanguageToTranslation(lang)
+                }
                 confirmedSegments = result.segments
                 confirmedText = result.segments.map(\.text).joined(separator: " ")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -847,6 +852,12 @@ final class WhisperService {
     private func processTranscriptionResult(_ result: ASRResult, sliceOffset: Float = 0) {
         let newSegments = result.segments
 
+        // Apply detected language to translation direction
+        if let lang = result.language, !lang.isEmpty, lang != detectedLanguage {
+            detectedLanguage = lang
+            applyDetectedLanguageToTranslation(lang)
+        }
+
         // Eager mode disabled for SenseVoice — single-segment models always return
         // 1 segment whose text changes every cycle, so segment comparison never confirms.
         unconfirmedSegments = newSegments
@@ -919,6 +930,30 @@ final class WhisperService {
             }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Detected Language → Translation Direction
+
+    /// When the ASR engine detects a language, automatically adjust translation direction.
+    /// If detected == current target, swap source↔target (e.g. detected "ja" when target is "ja" → flip).
+    /// If detected is neither source nor target, set it as source.
+    private func applyDetectedLanguageToTranslation(_ lang: String) {
+        guard translationEnabled else { return }
+        let currentSource = translationSourceLanguageCode
+        let currentTarget = translationTargetLanguageCode
+
+        if lang == currentTarget && lang != currentSource {
+            NSLog("[WhisperService] Detected language '%@' matches target — swapping translation direction", lang)
+            translationSourceLanguageCode = currentTarget
+            translationTargetLanguageCode = currentSource
+            resetTranslationState(stopTTS: true)
+            scheduleTranslationUpdate()
+        } else if lang != currentSource && lang != currentTarget {
+            NSLog("[WhisperService] Detected language '%@' — setting as translation source", lang)
+            translationSourceLanguageCode = lang
+            resetTranslationState(stopTTS: true)
+            scheduleTranslationUpdate()
+        }
     }
 
     // MARK: - Native Translation / TTS
@@ -1104,6 +1139,7 @@ final class WhisperService {
         ttsStartCount = 0
         ttsMicGuardViolations = 0
         micStoppedForTTS = false
+        detectedLanguage = nil
         completedChunksText = ""
         bufferEnergy = []
         bufferSeconds = 0

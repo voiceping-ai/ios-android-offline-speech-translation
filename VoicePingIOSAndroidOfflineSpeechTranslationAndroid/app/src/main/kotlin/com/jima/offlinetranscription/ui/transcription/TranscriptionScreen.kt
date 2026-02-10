@@ -35,7 +35,7 @@ import com.voiceping.offlinetranscription.util.FormatUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> Unit = {}) {
+fun TranscriptionScreen(viewModel: TranscriptionViewModel) {
     val context = LocalContext.current
 
     // Runtime mic permission request
@@ -403,11 +403,6 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
             fullText = viewModel.fullText,
             onCopyText = { clipboardManager.setText(AnnotatedString(viewModel.fullText)) },
             onClearTranscription = { viewModel.clearTranscription() },
-            onChangeModel = {
-                viewModel.stopIfRecording()
-                showSettings = false
-                onChangeModel()
-            },
             onVADChange = { viewModel.setUseVAD(it) },
             onTimestampsChange = { viewModel.setEnableTimestamps(it) },
             onDismiss = { showSettings = false }
@@ -424,7 +419,6 @@ private fun SettingsBottomSheet(
     fullText: String,
     onCopyText: () -> Unit,
     onClearTranscription: () -> Unit,
-    onChangeModel: () -> Unit,
     onVADChange: (Boolean) -> Unit,
     onTimestampsChange: (Boolean) -> Unit,
     onDismiss: () -> Unit
@@ -469,18 +463,6 @@ private fun SettingsBottomSheet(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Clear")
                 }
-            }
-
-            OutlinedButton(
-                onClick = onChangeModel,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-                    .semantics { contentDescription = "settings_change_model" }
-            ) {
-                Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Change Model")
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
@@ -677,24 +659,10 @@ private data class TranslationLanguageOption(
 
 private val TRANSLATION_LANGUAGE_OPTIONS = listOf(
     TranslationLanguageOption("en", "English"),
-    TranslationLanguageOption("ja", "Japanese"),
-    TranslationLanguageOption("es", "Spanish"),
-    TranslationLanguageOption("fr", "French"),
-    TranslationLanguageOption("de", "German"),
-    TranslationLanguageOption("it", "Italian"),
-    TranslationLanguageOption("pt", "Portuguese"),
-    TranslationLanguageOption("ko", "Korean"),
     TranslationLanguageOption("zh", "Chinese"),
-    TranslationLanguageOption("ru", "Russian"),
-    TranslationLanguageOption("ar", "Arabic"),
-    TranslationLanguageOption("hi", "Hindi"),
-    TranslationLanguageOption("id", "Indonesian"),
-    TranslationLanguageOption("vi", "Vietnamese"),
-    TranslationLanguageOption("th", "Thai"),
-    TranslationLanguageOption("tr", "Turkish"),
-    TranslationLanguageOption("nl", "Dutch"),
-    TranslationLanguageOption("sv", "Swedish"),
-    TranslationLanguageOption("pl", "Polish")
+    TranslationLanguageOption("ja", "Japanese"),
+    TranslationLanguageOption("ko", "Korean"),
+    TranslationLanguageOption("yue", "Cantonese")
 )
 
 private fun translationLanguageDisplayName(code: String): String {

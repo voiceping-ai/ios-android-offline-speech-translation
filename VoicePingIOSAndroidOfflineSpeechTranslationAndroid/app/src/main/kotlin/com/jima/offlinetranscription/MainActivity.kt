@@ -8,9 +8,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.voiceping.offlinetranscription.model.ModelInfo
 import com.voiceping.offlinetranscription.model.ModelState
 import com.voiceping.offlinetranscription.ui.navigation.AppNavigation
@@ -102,19 +104,35 @@ class MainActivity : ComponentActivity() {
                             isLoading = false
                         }
                     } else {
-                        app.whisperEngine.loadModelIfAvailable()
+                        // Auto-download and load the default model
+                        app.whisperEngine.setupModel()
+                        // Wait for model to be loaded
+                        app.whisperEngine.modelState.first { it == ModelState.Loaded || it == ModelState.Unloaded }
                         isLoading = false
                     }
                 }
 
                 if (isLoading) {
                     val modelState by app.whisperEngine.modelState.collectAsState()
+                    val downloadProgress by app.whisperEngine.downloadProgress.collectAsState()
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (modelState == ModelState.Loading || modelState == ModelState.Downloading) {
-                            CircularProgressIndicator()
+                        androidx.compose.foundation.layout.Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (modelState == ModelState.Downloading) {
+                                CircularProgressIndicator()
+                                Text("Downloading model... ${(downloadProgress * 100).toInt()}%")
+                            } else if (modelState == ModelState.Loading) {
+                                CircularProgressIndicator()
+                                Text("Loading model...")
+                            } else {
+                                CircularProgressIndicator()
+                                Text("Preparing...")
+                            }
                         }
                     }
                 } else {

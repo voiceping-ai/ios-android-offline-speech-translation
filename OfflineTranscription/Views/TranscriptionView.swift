@@ -398,7 +398,6 @@ struct TranscriptionView: View {
 struct ModelSettingsSheet: View {
     @Environment(WhisperService.self) private var whisperService
     @Environment(\.dismiss) private var dismiss
-    @State private var isSwitching = false
 
     let fullText: String
     let onCopyText: () -> Void
@@ -438,91 +437,6 @@ struct ModelSettingsSheet: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if isSwitching {
-                    Section {
-                        if whisperService.modelState == .downloading {
-                            VStack(spacing: 8) {
-                                ProgressView(
-                                    value: whisperService.downloadProgress
-                                ) {
-                                    Text(
-                                        "Downloading \(whisperService.selectedModel.displayName)..."
-                                    )
-                                    .font(.subheadline)
-                                }
-                                Text(
-                                    "\(Int(whisperService.downloadProgress * 100))%"
-                                )
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                        } else {
-                            HStack {
-                                ProgressView()
-                                Text("Loading model...")
-                                    .padding(.leading, 8)
-                            }
-                        }
-                    }
-                }
-
-                if !isSwitching, let error = whisperService.lastError {
-                    Section {
-                        Text(error.localizedDescription)
-                            .foregroundStyle(.red)
-                            .font(.callout)
-                    }
-                }
-
-                ForEach(ModelInfo.modelsByFamily, id: \.family) { group in
-                    Section(group.family.displayName) {
-                        ForEach(group.models) { model in
-                            Button {
-                                isSwitching = true
-                                Task {
-                                    await whisperService.switchModel(to: model)
-                                    isSwitching = false
-                                    if whisperService.modelState == .loaded {
-                                        dismiss()
-                                    }
-                                }
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(model.displayName)
-                                        Text(model.description)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        Text("Inference: \(model.inferenceMethodLabel)")
-                                            .font(.caption2)
-                                            .foregroundStyle(.tertiary)
-                                        if let note = model.availabilityNote {
-                                            Text(note)
-                                                .font(.caption2)
-                                                .foregroundStyle(.orange)
-                                        }
-                                    }
-                                    Spacer()
-                                    VStack(alignment: .trailing) {
-                                        Text(model.sizeOnDisk)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        Text(model.languages)
-                                            .font(.caption2)
-                                            .foregroundStyle(.tertiary)
-                                    }
-                                }
-                            }
-                            .accessibilityIdentifier("model_row_\(model.id)")
-                            .disabled(
-                                model.id == whisperService.selectedModel.id
-                                || isSwitching
-                                || !model.isSelectable
-                            )
-                        }
-                    }
-                }
-
                 Section("Transcription Settings") {
                     @Bindable var service = whisperService
                     Toggle("Voice Activity Detection", isOn: $service.useVAD)
@@ -537,7 +451,6 @@ struct ModelSettingsSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .accessibilityIdentifier("settings_done_button")
-                        .disabled(isSwitching)
                 }
             }
         }
@@ -557,24 +470,10 @@ private struct TranslationLanguageOption: Identifiable {
 private enum TranslationLanguageCatalog {
     static let options: [TranslationLanguageOption] = [
         .init(code: "en", name: "English"),
-        .init(code: "ja", name: "Japanese"),
-        .init(code: "es", name: "Spanish"),
-        .init(code: "fr", name: "French"),
-        .init(code: "de", name: "German"),
-        .init(code: "it", name: "Italian"),
-        .init(code: "pt", name: "Portuguese"),
-        .init(code: "ko", name: "Korean"),
         .init(code: "zh", name: "Chinese"),
-        .init(code: "ru", name: "Russian"),
-        .init(code: "ar", name: "Arabic"),
-        .init(code: "hi", name: "Hindi"),
-        .init(code: "id", name: "Indonesian"),
-        .init(code: "vi", name: "Vietnamese"),
-        .init(code: "th", name: "Thai"),
-        .init(code: "tr", name: "Turkish"),
-        .init(code: "nl", name: "Dutch"),
-        .init(code: "sv", name: "Swedish"),
-        .init(code: "pl", name: "Polish"),
+        .init(code: "ja", name: "Japanese"),
+        .init(code: "ko", name: "Korean"),
+        .init(code: "yue", name: "Cantonese"),
     ]
 
     static func displayName(for code: String) -> String {

@@ -37,22 +37,36 @@ struct RootView: View {
             switch whisperService.modelState {
             case .loaded:
                 MainTabView()
-            case .loading, .downloading:
-                VStack(spacing: 8) {
-                    ProgressView("Loading model...")
+            default:
+                // Auto-download/load progress view
+                VStack(spacing: 12) {
+                    Image(systemName: "waveform.circle.fill")
+                        .font(.system(size: 72))
+                        .foregroundStyle(.blue)
+                    Text("Offline Transcription")
+                        .font(.largeTitle.bold())
+
                     if whisperService.modelState == .downloading {
+                        ProgressView(value: whisperService.downloadProgress) {
+                            Text("Downloading model...")
+                                .font(.subheadline)
+                        }
+                        .padding(.horizontal, 40)
                         Text("\(Int(whisperService.downloadProgress * 100))%")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    } else if whisperService.modelState == .loading {
+                        ProgressView("Loading model...")
+                    } else {
+                        ProgressView("Preparing...")
                     }
-                }
-            default:
-                // Show setup if no engine is active, otherwise keep MainTabView
-                // so model switching doesn't flash setup screen
-                if whisperService.activeEngine != nil {
-                    MainTabView()
-                } else {
-                    ModelSetupView()
+
+                    if let error = whisperService.lastError {
+                        Text(error.localizedDescription)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .padding(.horizontal)
+                    }
                 }
             }
         }
@@ -68,9 +82,9 @@ struct RootView: View {
             if let modelId = Self.autoTestModelId,
                let model = ModelInfo.availableModels.first(where: { $0.id == modelId }) {
                 await whisperService.switchModel(to: model)
-            } else if !resetState {
-                // Skip auto-load when resetting state (e.g., test 10 wants setup screen)
-                await whisperService.loadModelIfAvailable()
+            } else {
+                // Auto-download and load the default model
+                await whisperService.setupModel()
             }
         }
     }

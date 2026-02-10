@@ -11,25 +11,19 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.voiceping.offlinetranscription.data.AppDatabase
 import com.voiceping.offlinetranscription.data.TranscriptionEntity
-import com.voiceping.offlinetranscription.model.ModelState
 import com.voiceping.offlinetranscription.service.WhisperEngine
 import com.voiceping.offlinetranscription.ui.history.HistoryDetailScreen
 import com.voiceping.offlinetranscription.ui.history.HistoryScreen
 import com.voiceping.offlinetranscription.ui.history.HistoryViewModel
-import com.voiceping.offlinetranscription.ui.setup.ModelSetupScreen
-import com.voiceping.offlinetranscription.ui.setup.ModelSetupViewModel
 import com.voiceping.offlinetranscription.ui.transcription.TranscriptionScreen
 import com.voiceping.offlinetranscription.ui.transcription.TranscriptionViewModel
 import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.launch
 
 object Routes {
-    const val SETUP = "setup"
     const val MAIN = "main"
     const val TRANSCRIBE = "transcribe"
     const val HISTORY = "history"
@@ -41,40 +35,13 @@ fun AppNavigation(
     engine: WhisperEngine,
     database: AppDatabase
 ) {
-    val modelState by engine.modelState.collectAsState()
     val navController = rememberNavController()
 
-    val startDestination = if (modelState == ModelState.Loaded) Routes.MAIN else Routes.SETUP
-
-    // Watch for model state changes to navigate
-    LaunchedEffect(modelState) {
-        if (modelState == ModelState.Loaded) {
-            val currentRoute = navController.currentBackStackEntry?.destination?.route
-            if (currentRoute == Routes.SETUP) {
-                navController.navigate(Routes.MAIN) {
-                    popUpTo(Routes.SETUP) { inclusive = true }
-                }
-            }
-        }
-    }
-
-    NavHost(navController = navController, startDestination = startDestination) {
-        composable(Routes.SETUP) {
-            val viewModel = remember { ModelSetupViewModel(engine) }
-            ModelSetupScreen(viewModel = viewModel)
-        }
-
+    NavHost(navController = navController, startDestination = Routes.MAIN) {
         composable(Routes.MAIN) {
             MainTabScreen(
                 engine = engine,
-                database = database,
-                onChangeModel = {
-                    engine.unloadModel()
-                    engine.clearError()
-                    navController.navigate(Routes.SETUP) {
-                        popUpTo(Routes.MAIN) { inclusive = true }
-                    }
-                }
+                database = database
             )
         }
 
@@ -97,8 +64,7 @@ fun AppNavigation(
 @Composable
 fun MainTabScreen(
     engine: WhisperEngine,
-    database: AppDatabase,
-    onChangeModel: () -> Unit
+    database: AppDatabase
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Transcribe" to Icons.Filled.Mic, "History" to Icons.Filled.History)
@@ -125,7 +91,7 @@ fun MainTabScreen(
             0 -> {
                 val viewModel = remember { TranscriptionViewModel(engine, database, context.filesDir) }
                 Box(modifier = Modifier.padding(bottom = paddingValues.calculateBottomPadding())) {
-                    TranscriptionScreen(viewModel = viewModel, onChangeModel = onChangeModel)
+                    TranscriptionScreen(viewModel = viewModel)
                 }
             }
             1 -> {

@@ -1022,6 +1022,13 @@ class WhisperEngine(
                 if (elapsed > 0 && totalWords > 0) {
                     _tokensPerSecond.value = totalWords / elapsed
                 }
+                // Apply detected language to translation direction
+                val lang = segments.firstOrNull()?.detectedLanguage
+                if (lang != null && lang != _detectedLanguage.value) {
+                    _detectedLanguage.value = lang
+                    applyDetectedLanguageToTranslation(lang)
+                }
+
                 chunkManager.confirmedSegments.addAll(segments)
                 val renderedText = chunkManager.renderSegmentsText(segments)
                 chunkManager.confirmedText = renderedText
