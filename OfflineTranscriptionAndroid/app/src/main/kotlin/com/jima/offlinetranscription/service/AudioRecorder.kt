@@ -24,9 +24,6 @@ class AudioRecorder(private val context: Context) {
         const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val CHUNK_SIZE = 1600 // 100ms at 16kHz
-        private const val PROBE_CHUNK_SIZE = 320 // 20ms at 16kHz
-        private const val PROBE_READS = 8
-        private const val PROBE_EPSILON = 0.0005f
     }
 
     private enum class RecorderFormat(val audioEncoding: Int, val bytesPerSample: Int) {
@@ -48,6 +45,7 @@ class AudioRecorder(private val context: Context) {
 
     private var audioRecord: AudioRecord? = null
     private var activeConfig: RecorderConfig? = null
+    private var preferredConfig: RecorderConfig? = null
     // Use ArrayList with initial capacity to reduce reallocation overhead
     private val audioBuffer = ArrayList<Float>(SAMPLE_RATE * 60) // Pre-allocate ~1 min
     private val energyHistory = ArrayList<Float>(500)
@@ -111,6 +109,46 @@ class AudioRecorder(private val context: Context) {
             droppedSampleCount = 0
         }
         synchronized(energyHistory) { energyHistory.clear() }
+    }
+
+    /**
+     * Pre-initialize the recorder config so first real recording starts with minimal latency.
+     * Safe to call multiple times; no-op without permission or while recording.
+     */
+    fun prewarm() {
+        if (!hasPermission() || isRecording) return
+        var record: AudioRecord? = null
+        try {
+            val (createdRecord, config) = createAudioRecordWithFallback()
+            record = createdRecord
+            preferredConfig = config
+            record.startRecording()
+            if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                when (config.format) {
+                    RecorderFormat.PcmFloat -> {
+                        val scratch = FloatArray(CHUNK_SIZE)
+                        repeat(2) {
+                            record.read(scratch, 0, scratch.size, AudioRecord.READ_BLOCKING)
+                        }
+                    }
+                    RecorderFormat.Pcm16Bit -> {
+                        val scratch = ShortArray(CHUNK_SIZE)
+                        repeat(2) {
+                            record.read(scratch, 0, scratch.size, AudioRecord.READ_BLOCKING)
+                        }
+                    }
+                }
+            }
+            Log.i("AudioRecorder", "Prewarmed source=${config.source.label} format=${config.format.name}")
+        } catch (e: Throwable) {
+            Log.w("AudioRecorder", "Prewarm failed", e)
+        } finally {
+            try {
+                record?.stop()
+            } catch (_: Throwable) {
+            }
+            record?.release()
+        }
     }
 
     @Suppress("MissingPermission")
@@ -188,113 +226,50 @@ class AudioRecorder(private val context: Context) {
             RecorderSource.Default
         )
         var lastError: Throwable? = null
-        var bestConfig: RecorderConfig? = null
-        var bestProbePeak = -1f
+
+        // Fast path: reuse the last known working config to avoid startup probe latency.
+        preferredConfig?.let { cached ->
+            try {
+                val cachedRecord = createAudioRecord(cached.source, cached.format)
+                if (cachedRecord.state == AudioRecord.STATE_INITIALIZED) {
+                    return cachedRecord to cached
+                }
+                cachedRecord.release()
+            } catch (e: Throwable) {
+                lastError = e
+            }
+        }
 
         for (source in sourceOrder) {
             for (format in preferredOrder) {
-                var candidate: AudioRecord? = null
                 try {
-                    candidate = createAudioRecord(source, format)
-                    if (candidate.state != AudioRecord.STATE_INITIALIZED) {
-                        candidate.release()
-                        continue
+                    val candidate = createAudioRecord(source, format)
+                    if (candidate.state == AudioRecord.STATE_INITIALIZED) {
+                        val chosen = RecorderConfig(source, format)
+                        preferredConfig = chosen
+                        if (chosen.source != RecorderSource.Mic) {
+                            Log.w("AudioRecorder", "Using fallback audio source ${chosen.source.label}")
+                        }
+                        if (chosen.format == RecorderFormat.PcmFloat) {
+                            Log.w("AudioRecorder", "Using fallback PCM_FLOAT microphone capture")
+                        }
+                        Log.i(
+                            "AudioRecorder",
+                            "Selected audio source=${chosen.source.label} format=${chosen.format.name}"
+                        )
+                        return candidate to chosen
                     }
-                    val probePeak = probeInputPeak(candidate, format)
-                    if (probePeak > bestProbePeak + PROBE_EPSILON) {
-                        bestProbePeak = probePeak
-                        bestConfig = RecorderConfig(source, format)
-                    }
+                    candidate.release()
                 } catch (e: Throwable) {
                     lastError = e
-                } finally {
-                    try {
-                        candidate?.release()
-                    } catch (_: Throwable) {
-                    }
                 }
             }
         }
 
-        val chosen = bestConfig ?: throw IllegalStateException(
+        throw IllegalStateException(
             "AudioRecord failed to initialize (unsupported audio config?)",
             lastError
         )
-
-        val finalRecord = createAudioRecord(chosen.source, chosen.format)
-        if (finalRecord.state != AudioRecord.STATE_INITIALIZED) {
-            finalRecord.release()
-            throw IllegalStateException("Failed to initialize selected AudioRecord config")
-        }
-
-        if (chosen.source != RecorderSource.Mic) {
-            Log.w("AudioRecorder", "Using fallback audio source ${chosen.source.label}")
-        }
-        if (chosen.format == RecorderFormat.PcmFloat) {
-            Log.w("AudioRecorder", "Using fallback PCM_FLOAT microphone capture")
-        }
-        Log.i(
-            "AudioRecorder",
-            "Selected audio source=${chosen.source.label} format=${chosen.format.name} probePeak=${"%.4f".format(bestProbePeak)}"
-        )
-
-        return finalRecord to chosen
-    }
-
-    private fun probeInputPeak(record: AudioRecord, format: RecorderFormat): Float {
-        var maxPeak = 0f
-        try {
-            record.startRecording()
-            if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-                return 0f
-            }
-
-            when (format) {
-                RecorderFormat.PcmFloat -> {
-                    val chunk = FloatArray(PROBE_CHUNK_SIZE)
-                    var validSamples = 0
-                    var clippedSamples = 0
-                    repeat(PROBE_READS) {
-                        val read = record.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING)
-                        if (read > 0) {
-                            for (i in 0 until read) {
-                                val raw = chunk[i]
-                                if (!raw.isFinite()) continue
-                                val absRaw = abs(raw)
-                                if (absRaw > 8f) continue
-                                val v = absRaw.coerceIn(0f, 1f)
-                                validSamples += 1
-                                if (v >= 0.99f) clippedSamples += 1
-                                if (v > maxPeak) maxPeak = v
-                            }
-                        }
-                    }
-                    if (validSamples == 0) return 0f
-                    val clippedRatio = clippedSamples.toFloat() / validSamples.toFloat()
-                    if (clippedRatio > 0.7f) return 0f
-                }
-                RecorderFormat.Pcm16Bit -> {
-                    val chunk = ShortArray(PROBE_CHUNK_SIZE)
-                    repeat(PROBE_READS) {
-                        val read = record.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING)
-                        if (read > 0) {
-                            for (i in 0 until read) {
-                                val v = abs(chunk[i] / 32768.0f)
-                                if (v > maxPeak) maxPeak = v
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (_: Throwable) {
-            return 0f
-        } finally {
-            try {
-                record.stop()
-            } catch (_: Throwable) {
-            }
-        }
-        return maxPeak
     }
 
     @SuppressLint("MissingPermission")

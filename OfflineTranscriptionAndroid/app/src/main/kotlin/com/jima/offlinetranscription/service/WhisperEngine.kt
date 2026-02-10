@@ -142,9 +142,20 @@ class WhisperEngine(
     private var transcriptionJob: Job? = null
     private var recordingJob: Job? = null
     private var energyJob: Job? = null
-    private val chunkManager = StreamingChunkManager()
+    private val recorderPrewarmMutex = Mutex()
+    private val inferencePrewarmMutex = Mutex()
+    private val chunkManager = StreamingChunkManager(
+        chunkSeconds = OFFLINE_REALTIME_CHUNK_SECONDS,
+        sampleRate = AudioRecorder.SAMPLE_RATE,
+        minNewAudioSeconds = MIN_NEW_AUDIO_SECONDS
+    )
     private var lastBufferSize: Int = 0
     private val inferenceMutex = Mutex()
+    private var prewarmedModelId: String? = null
+    private var recordingStartElapsedMs: Long = 0L
+    private var hasCompletedFirstInference: Boolean = false
+    private var realtimeInferenceCount: Long = 0
+    private var movingAverageInferenceSeconds: Double = 0.0
     private val sessionToken = AtomicLong(0)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val nativeTranslator: AndroidNativeTranslator? =
@@ -173,13 +184,27 @@ class WhisperEngine(
 
     companion object {
         private const val MAX_BUFFER_SAMPLES = 16000 * 300 // 5 minutes
-        private const val MIN_NEW_AUDIO_SECONDS = 1.0f
+        private const val MIN_NEW_AUDIO_SECONDS = 0.7f
+        private const val OFFLINE_REALTIME_CHUNK_SECONDS = 3.5f
+        private const val INITIAL_MIN_NEW_AUDIO_SECONDS = 0.35f
+        private const val INITIAL_VAD_BYPASS_SECONDS = 0.8f
+        private const val INFERENCE_PREWARM_AUDIO_SECONDS = 0.5f
+        private const val TARGET_INFERENCE_DUTY_CYCLE = 0.24f
+        private const val MAX_CPU_PROTECT_DELAY_SECONDS = 1.6f
+        private const val INFERENCE_EMA_ALPHA = 0.20
+        private const val DIAGNOSTIC_LOG_INTERVAL = 5L
         // Emulator host-mic levels are often lower than physical devices.
         private const val SILENCE_THRESHOLD = 0.0015f
+        private const val VAD_PREROLL_SECONDS = 0.6f
         private const val FORCE_TRANSCRIBE_AFTER_SILENT_WINDOWS = 2
         private const val NO_SIGNAL_TIMEOUT_SECONDS = 8.0
         private const val SIGNAL_ENERGY_THRESHOLD = 0.005f
         private val WHITESPACE_REGEX = "\\s+".toRegex()
+        private const val CJK_CHAR_CLASS = "[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}々〆ヵヶー]"
+        private val CJK_INNER_SPACE_REGEX = "($CJK_CHAR_CLASS)\\s+($CJK_CHAR_CLASS)".toRegex()
+        private val SPACE_BEFORE_CJK_PUNCT_REGEX = "\\s+([、。！？：；）」』】〉》])".toRegex()
+        private val SPACE_AFTER_CJK_OPEN_PUNCT_REGEX = "([（「『【〈《])\\s+".toRegex()
+        private val SPACE_AFTER_CJK_END_PUNCT_REGEX = "([、。！？：；])\\s+($CJK_CHAR_CLASS)".toRegex()
     }
 
     val fullTranscriptionText: String
@@ -296,6 +321,7 @@ class WhisperEngine(
             val success = engine.loadModel(modelPath)
             if (!success) throw Exception("Failed to load model")
             currentEngine = engine
+            prewarmedModelId = null
             _modelState.value = ModelState.Loaded
         } catch (e: Throwable) {
             _modelState.value = ModelState.Unloaded
@@ -305,6 +331,7 @@ class WhisperEngine(
     fun unloadModel() {
         currentEngine?.release()
         currentEngine = null
+        prewarmedModelId = null
         _modelState.value = ModelState.Unloaded
     }
 
@@ -355,10 +382,12 @@ class WhisperEngine(
 
             currentEngine?.release()
             currentEngine = engine
+            prewarmedModelId = null
             _modelState.value = ModelState.Loaded
             preferences.setSelectedModelId(model.id)
             preferences.setLastModelPath(modelPath)
         } catch (e: Throwable) {
+            Log.e("WhisperEngine", "setupModel failed for model=${model.id}", e)
             val wasDownloading = _downloadProgress.value < 1f
             _modelState.value = ModelState.Unloaded
             _downloadProgress.value = 0f
@@ -378,6 +407,7 @@ class WhisperEngine(
 
         currentEngine?.release()
         currentEngine = null
+        prewarmedModelId = null
         _modelState.value = ModelState.Unloaded
         setupModel()
     }
@@ -433,6 +463,69 @@ class WhisperEngine(
         preferences.setTtsRate(normalized)
     }
 
+    /**
+     * Warm up microphone recorder path ahead of first record tap so runtime setup
+     * does not steal the beginning of the utterance.
+     */
+    suspend fun prewarmRecordingPath() {
+        if (!audioRecorder.hasPermission()) return
+        if (_sessionState.value != SessionState.Idle) return
+        recorderPrewarmMutex.withLock {
+            withContext(Dispatchers.IO) {
+                audioRecorder.prewarm()
+            }
+        }
+    }
+
+    /**
+     * Prime the first native ASR decode so user speech is not delayed by runtime
+     * graph compilation / allocator initialization on the first utterance.
+     */
+    suspend fun prewarmInferencePath() {
+        if (_sessionState.value != SessionState.Idle) return
+        val engine = currentEngine ?: return
+        if (!engine.isLoaded) return
+        val currentModelId = _selectedModel.value.id
+        if (prewarmedModelId == currentModelId) return
+
+        inferencePrewarmMutex.withLock {
+            if (_sessionState.value != SessionState.Idle) return
+            val liveEngine = currentEngine ?: return
+            if (!liveEngine.isLoaded) return
+            val liveModelId = _selectedModel.value.id
+            if (prewarmedModelId == liveModelId) return
+
+            val warmupSampleCount =
+                (AudioRecorder.SAMPLE_RATE * INFERENCE_PREWARM_AUDIO_SECONDS).toInt().coerceAtLeast(1)
+            val warmupAudio = FloatArray(warmupSampleCount)
+
+            withContext(Dispatchers.IO) {
+                if (!inferenceMutex.tryLock()) return@withContext
+                try {
+                    liveEngine.transcribe(
+                        audioSamples = warmupAudio,
+                        numThreads = computeInferenceThreads(),
+                        language = "auto"
+                    )
+                } finally {
+                    inferenceMutex.unlock()
+                }
+            }
+
+            prewarmedModelId = liveModelId
+            Log.i("WhisperEngine", "Inference prewarm complete for model=$liveModelId")
+        }
+    }
+
+    suspend fun prewarmRealtimePath() {
+        Log.i(
+            "WhisperEngine",
+            "prewarmRealtimePath: state=${_sessionState.value}, micPermission=${audioRecorder.hasPermission()}, modelLoaded=${currentEngine?.isLoaded == true}"
+        )
+        prewarmRecordingPath()
+        prewarmInferencePath()
+    }
+
     fun startRecording() {
         Log.i("WhisperEngine", "startRecording: sessionState=${_sessionState.value}, engine=${currentEngine != null}, loaded=${currentEngine?.isLoaded}")
         if (_sessionState.value != SessionState.Idle) {
@@ -457,6 +550,13 @@ class WhisperEngine(
         resetTranscriptionState()
         ttsService.stop()
         transitionTo(SessionState.Recording)
+        recordingStartElapsedMs = SystemClock.elapsedRealtime()
+        hasCompletedFirstInference = false
+        realtimeInferenceCount = 0
+        Log.i(
+            "WhisperEngine",
+            "realtime config: chunkSeconds=$OFFLINE_REALTIME_CHUNK_SECONDS baseGate=${MIN_NEW_AUDIO_SECONDS}s initialGate=${INITIAL_MIN_NEW_AUDIO_SECONDS}s targetDuty=${TARGET_INFERENCE_DUTY_CYCLE}"
+        )
         val activeSessionToken = nextSessionToken()
         transcriptionJob?.cancel()
         recordingJob?.cancel()
@@ -584,6 +684,8 @@ class WhisperEngine(
     /** Streaming transcription loop — feeds audio incrementally and polls for results. */
     private suspend fun streamingLoop(sessionToken: Long) {
         val engine = currentEngine ?: return
+        var streamFeedCount = 0L
+        var lastLoggedStreamingText = ""
         try {
             while (isSessionActive(sessionToken)) {
                 try {
@@ -594,18 +696,38 @@ class WhisperEngine(
                         if (newSamples.isNotEmpty()) {
                             engine.feedAudio(newSamples)
                             lastBufferSize = currentCount
+                            streamFeedCount += 1
+                            if (streamFeedCount <= 3 || streamFeedCount % DIAGNOSTIC_LOG_INTERVAL == 0L) {
+                                val fedSec = newSamples.size.toFloat() / AudioRecorder.SAMPLE_RATE
+                                val totalSec = currentCount.toFloat() / AudioRecorder.SAMPLE_RATE
+                                Log.i(
+                                    "WhisperEngine",
+                                    "stream feed #$streamFeedCount +${"%.2f".format(fedSec)}s total=${"%.2f".format(totalSec)}s"
+                                )
+                            }
                         }
                     }
 
                     // Poll streaming result
                     val result = engine.getStreamingResult()
                     if (result != null) {
-                        _hypothesisText.value = normalizeDisplayText(result.text)
+                        val normalized = normalizeDisplayText(result.text)
+                        _hypothesisText.value = normalized
                         scheduleTranslationUpdate()
+                        if (normalized.isNotBlank() && normalized != lastLoggedStreamingText) {
+                            lastLoggedStreamingText = normalized
+                            val totalSec = currentCount.toFloat() / AudioRecorder.SAMPLE_RATE
+                            Log.i(
+                                "WhisperEngine",
+                                "stream hypothesis @${"%.2f".format(totalSec)}s chars=${normalized.length}"
+                            )
+                        }
                     }
 
                     // Endpoint detected → finalize this utterance
                     if (engine.isEndpointDetected()) {
+                        val totalSec = currentCount.toFloat() / AudioRecorder.SAMPLE_RATE
+                        Log.i("WhisperEngine", "stream endpoint detected @${"%.2f".format(totalSec)}s")
                         val finalResult = engine.getStreamingResult()
                         if (finalResult != null && finalResult.text.isNotBlank()) {
                             chunkManager.confirmedSegments.add(finalResult)
@@ -675,9 +797,20 @@ class WhisperEngine(
         val currentBufferSize = audioRecorder.sampleCount
         val nextBufferSize = currentBufferSize - lastBufferSize
         val nextBufferSeconds = nextBufferSize.toFloat() / AudioRecorder.SAMPLE_RATE
+        val bufferSeconds = currentBufferSize.toFloat() / AudioRecorder.SAMPLE_RATE
 
-        // Adaptive delay: wait longer during silence to save CPU
-        val effectiveDelay = chunkManager.adaptiveDelay()
+        val initialPhase = !hasCompletedFirstInference
+        // Use a shorter gate for the very first decode so first words appear faster.
+        val baseDelay = if (initialPhase) {
+            INITIAL_MIN_NEW_AUDIO_SECONDS
+        } else {
+            chunkManager.adaptiveDelay()
+        }
+        val effectiveDelay = if (initialPhase) {
+            baseDelay
+        } else {
+            computeCpuAwareDelay(baseDelay)
+        }
         if (nextBufferSeconds < effectiveDelay) {
             delay(100)
             return
@@ -685,30 +818,50 @@ class WhisperEngine(
 
         // VAD check
         if (_useVAD.value) {
-            val energy = audioRecorder.relativeEnergy
-            if (energy.isNotEmpty()) {
-                val recentEnergy = energy.takeLast(10)
-                val avgEnergy = recentEnergy.sum() / recentEnergy.size
-                val peakEnergy = recentEnergy.maxOrNull() ?: 0f
-                val hasVoice = peakEnergy >= SILENCE_THRESHOLD ||
-                    avgEnergy >= SILENCE_THRESHOLD * 0.5f
+            val vadBypassSamples = (AudioRecorder.SAMPLE_RATE * INITIAL_VAD_BYPASS_SECONDS).toInt()
+            val bypassVadDuringStartup = initialPhase && currentBufferSize <= vadBypassSamples
+            if (!bypassVadDuringStartup) {
+                val energy = audioRecorder.relativeEnergy
+                if (energy.isNotEmpty()) {
+                    val recentEnergy = energy.takeLast(10)
+                    val avgEnergy = recentEnergy.sum() / recentEnergy.size
+                    val peakEnergy = recentEnergy.maxOrNull() ?: 0f
+                    val hasVoice = peakEnergy >= SILENCE_THRESHOLD ||
+                        avgEnergy >= SILENCE_THRESHOLD * 0.5f
 
-                if (!hasVoice) {
-                    chunkManager.consecutiveSilentWindows += 1
-                    val shouldForceDecode =
-                        chunkManager.consecutiveSilentWindows >= FORCE_TRANSCRIBE_AFTER_SILENT_WINDOWS
-                    if (!shouldForceDecode) {
-                        lastBufferSize = currentBufferSize
-                        return
+                    if (!hasVoice) {
+                        chunkManager.consecutiveSilentWindows += 1
+                        val shouldForceDecode =
+                            chunkManager.consecutiveSilentWindows >= FORCE_TRANSCRIBE_AFTER_SILENT_WINDOWS
+                        if (!shouldForceDecode) {
+                            if (chunkManager.consecutiveSilentWindows <= 2 ||
+                                chunkManager.consecutiveSilentWindows % DIAGNOSTIC_LOG_INTERVAL.toInt() == 0
+                            ) {
+                                Log.i(
+                                    "WhisperEngine",
+                                    "rt VAD skip: silentWindows=${chunkManager.consecutiveSilentWindows} buffer=${"%.2f".format(bufferSeconds)}s"
+                                )
+                            }
+                            keepVadPreroll(currentBufferSize)
+                            return
+                        }
+                    } else {
+                        chunkManager.consecutiveSilentWindows = 0
                     }
                 } else {
-                    chunkManager.consecutiveSilentWindows = 0
-                }
-            } else {
-                chunkManager.consecutiveSilentWindows += 1
-                if (chunkManager.consecutiveSilentWindows < FORCE_TRANSCRIBE_AFTER_SILENT_WINDOWS) {
-                    lastBufferSize = currentBufferSize
-                    return
+                    chunkManager.consecutiveSilentWindows += 1
+                    if (chunkManager.consecutiveSilentWindows < FORCE_TRANSCRIBE_AFTER_SILENT_WINDOWS) {
+                        if (chunkManager.consecutiveSilentWindows <= 2 ||
+                            chunkManager.consecutiveSilentWindows % DIAGNOSTIC_LOG_INTERVAL.toInt() == 0
+                        ) {
+                            Log.i(
+                                "WhisperEngine",
+                                "rt VAD skip(no-energy): silentWindows=${chunkManager.consecutiveSilentWindows} buffer=${"%.2f".format(bufferSeconds)}s"
+                            )
+                        }
+                        keepVadPreroll(currentBufferSize)
+                        return
+                    }
                 }
             }
         }
@@ -724,6 +877,8 @@ class WhisperEngine(
 
         val audioSamples = audioRecorder.samplesRange(slice.startSample, slice.endSample)
         if (audioSamples.isEmpty()) return
+        val sliceStartSec = slice.startSample.toFloat() / AudioRecorder.SAMPLE_RATE
+        val sliceEndSec = slice.endSample.toFloat() / AudioRecorder.SAMPLE_RATE
 
         val startTime = System.nanoTime()
         val numThreads = computeInferenceThreads()
@@ -738,16 +893,32 @@ class WhisperEngine(
         } finally {
             inferenceMutex.unlock()
         }
+        realtimeInferenceCount += 1
+        val inferenceIndex = realtimeInferenceCount
+        if (!hasCompletedFirstInference) {
+            val firstInferenceMs = SystemClock.elapsedRealtime() - recordingStartElapsedMs
+            Log.i(
+                "WhisperEngine",
+                "First inference completed in ${firstInferenceMs}ms (buffer=${"%.2f".format(bufferSeconds)}s, slice=${"%.2f".format(sliceEndSec - sliceStartSec)}s)"
+            )
+        }
+        hasCompletedFirstInference = true
         if (!isSessionActive(sessionToken)) return
 
         val elapsed = (System.nanoTime() - startTime) / 1_000_000_000.0
+        if (elapsed > 0.0) {
+            movingAverageInferenceSeconds = if (movingAverageInferenceSeconds <= 0.0) {
+                elapsed
+            } else {
+                movingAverageInferenceSeconds + INFERENCE_EMA_ALPHA * (elapsed - movingAverageInferenceSeconds)
+            }
+        }
         val sliceDurationSec = audioSamples.size.toFloat() / AudioRecorder.SAMPLE_RATE
         val totalWords = newSegments.sumOf { it.text.split(" ").size }
         if (elapsed > 0 && totalWords > 0) {
             _tokensPerSecond.value = totalWords / elapsed
         }
-        Log.i("WhisperEngine", "chunk inference: %.1fs audio in %.2fs (ratio %.1fx, %d words)"
-            .format(sliceDurationSec, elapsed, sliceDurationSec / elapsed, totalWords))
+        val confirmedBeforeSec = chunkManager.lastConfirmedSegmentEndMs / 1000f
 
         if (newSegments.isNotEmpty()) {
             chunkManager.consecutiveSilentWindows = 0
@@ -762,10 +933,40 @@ class WhisperEngine(
         _confirmedText.value = chunkManager.confirmedText
         _hypothesisText.value = chunkManager.hypothesisText
         scheduleTranslationUpdate()
+        val confirmedAfterSec = chunkManager.lastConfirmedSegmentEndMs / 1000f
+        val lagAfterSec = (bufferSeconds - confirmedAfterSec).coerceAtLeast(0f)
+        val previewText = newSegments.firstOrNull()
+            ?.text
+            ?.let { normalizeDisplayText(it) }
+            ?.take(64)
+            .orEmpty()
+        val ratio = if (elapsed > 0.0) sliceDurationSec / elapsed else 0.0f
+        val shouldLogDetailed =
+            inferenceIndex <= 4L ||
+                inferenceIndex % DIAGNOSTIC_LOG_INTERVAL == 0L ||
+                elapsed >= 0.35 ||
+                sliceDurationSec >= 4.0f ||
+                lagAfterSec >= 2.0f
+        if (shouldLogDetailed) {
+            Log.i(
+                "WhisperEngine",
+                "rt chunk #$inferenceIndex buf=${"%.2f".format(bufferSeconds)}s new=${"%.2f".format(nextBufferSeconds)}s gate=${"%.2f".format(effectiveDelay)}s base=${"%.2f".format(baseDelay)}s avgInfer=${"%.3f".format(movingAverageInferenceSeconds)}s cpu=${"%.0f".format(_cpuPercent.value)}% slice=[${"%.2f".format(sliceStartSec)},${"%.2f".format(sliceEndSec)}] dur=${"%.2f".format(sliceDurationSec)}s infer=${"%.3f".format(elapsed)}s ratio=${"%.1f".format(ratio)}x seg=${newSegments.size} words=$totalWords conf=${"%.2f".format(confirmedBeforeSec)}s->${"%.2f".format(confirmedAfterSec)}s lag=${"%.2f".format(lagAfterSec)}s preview='${previewText}'"
+            )
+        }
 
         val safeTrimSample = ((chunkManager.lastConfirmedSegmentEndMs * AudioRecorder.SAMPLE_RATE) / 1000)
             .toInt()
         trimRecorderBufferIfNeeded(safeTrimSample)
+    }
+
+    /**
+     * When VAD says "no voice", keep a small trailing pre-roll instead of
+     * fully advancing lastBufferSize. This preserves utterance onsets that
+     * straddle VAD boundaries, especially right after recording starts.
+     */
+    private fun keepVadPreroll(currentBufferSize: Int) {
+        val preRollSamples = (AudioRecorder.SAMPLE_RATE * VAD_PREROLL_SECONDS).toInt()
+        lastBufferSize = (currentBufferSize - preRollSamples).coerceAtLeast(0)
     }
 
 
@@ -829,7 +1030,22 @@ class WhisperEngine(
         _bufferSeconds.value = 0.0
         _tokensPerSecond.value = 0.0
         _lastError.value = null
+        recordingStartElapsedMs = 0L
+        hasCompletedFirstInference = false
+        realtimeInferenceCount = 0
+        movingAverageInferenceSeconds = 0.0
         audioRecorder.reset()
+    }
+
+    /**
+     * Keep realtime CPU usage stable by spacing decode cycles based on observed
+     * native inference time (EMA) and a target duty cycle budget.
+     */
+    private fun computeCpuAwareDelay(baseDelay: Float): Float {
+        val avg = movingAverageInferenceSeconds
+        if (avg <= 0.0) return baseDelay
+        val budgetDelay = (avg / TARGET_INFERENCE_DUTY_CYCLE).toFloat()
+        return maxOf(baseDelay, budgetDelay.coerceAtMost(MAX_CPU_PROTECT_DELAY_SECONDS))
     }
 
     /** Clear translation-related state without affecting transcription or audio. */
@@ -966,51 +1182,80 @@ class WhisperEngine(
         )
         _e2eResult.value = result
 
-        // Write JSON to app's external files dir for collection by test harness
+        val json = buildString {
+            append("{\n")
+            append("  \"model_id\": \"${jsonEscape(result.modelId)}\",\n")
+            append("  \"engine\": \"${jsonEscape(result.engine)}\",\n")
+            append("  \"transcript\": \"${jsonEscape(result.transcript)}\",\n")
+            append("  \"translated_text\": \"${jsonEscape(result.translatedText)}\",\n")
+            append("  \"translation_warning\": ")
+            append(
+                _translationWarning.value?.let { "\"${jsonEscape(it)}\"" } ?: "null"
+            )
+            append(",\n")
+            append("  \"expects_translation\": $expectsTranslation,\n")
+            append("  \"translation_ready\": $translationReady,\n")
+            append("  \"tts_audio_path\": ")
+            append(
+                if (result.ttsAudioPath != null) {
+                    "\"${jsonEscape(result.ttsAudioPath)}\""
+                } else {
+                    "null"
+                }
+            )
+            append(",\n")
+            append("  \"expects_tts_evidence\": $expectsTtsEvidence,\n")
+            append("  \"tts_ready\": $ttsReady,\n")
+            append("  \"tts_start_count\": ${result.ttsStartCount},\n")
+            append("  \"tts_mic_guard_violations\": ${result.ttsMicGuardViolations},\n")
+            append("  \"mic_stopped_for_tts\": ${result.micStoppedForTts},\n")
+            append("  \"pass\": ${result.pass},\n")
+            append("  \"duration_ms\": ${result.durationMs},\n")
+            append("  \"timestamp\": \"${jsonEscape(result.timestamp)}\",\n")
+            append("  \"error\": ")
+            append(
+                if (result.error != null) {
+                    "\"${jsonEscape(result.error)}\""
+                } else {
+                    "null"
+                }
+            )
+            append("\n")
+            append("}")
+        }
+        writeE2EJson(modelId = model.id, json = json)
+    }
+
+    fun writeE2EFailure(modelId: String = _selectedModel.value.id, error: String) {
+        val model = ModelInfo.availableModels.find { it.id == modelId } ?: _selectedModel.value
+        val json = buildString {
+            append("{\n")
+            append("  \"model_id\": \"${jsonEscape(modelId)}\",\n")
+            append("  \"engine\": \"${jsonEscape(model.inferenceMethod)}\",\n")
+            append("  \"transcript\": \"\",\n")
+            append("  \"translated_text\": \"\",\n")
+            append("  \"translation_warning\": null,\n")
+            append("  \"expects_translation\": false,\n")
+            append("  \"translation_ready\": true,\n")
+            append("  \"tts_audio_path\": null,\n")
+            append("  \"expects_tts_evidence\": false,\n")
+            append("  \"tts_ready\": true,\n")
+            append("  \"tts_start_count\": 0,\n")
+            append("  \"tts_mic_guard_violations\": 0,\n")
+            append("  \"mic_stopped_for_tts\": false,\n")
+            append("  \"pass\": false,\n")
+            append("  \"duration_ms\": 0.0,\n")
+            append("  \"timestamp\": \"${jsonEscape(java.time.Instant.now().toString())}\",\n")
+            append("  \"error\": \"${jsonEscape(error)}\"\n")
+            append("}")
+        }
+        writeE2EJson(modelId = modelId, json = json)
+    }
+
+    private fun writeE2EJson(modelId: String, json: String) {
         try {
-            val json = buildString {
-                append("{\n")
-                append("  \"model_id\": \"${jsonEscape(result.modelId)}\",\n")
-                append("  \"engine\": \"${jsonEscape(result.engine)}\",\n")
-                append("  \"transcript\": \"${jsonEscape(result.transcript)}\",\n")
-                append("  \"translated_text\": \"${jsonEscape(result.translatedText)}\",\n")
-                append("  \"translation_warning\": ")
-                append(
-                    _translationWarning.value?.let { "\"${jsonEscape(it)}\"" } ?: "null"
-                )
-                append(",\n")
-                append("  \"expects_translation\": $expectsTranslation,\n")
-                append("  \"translation_ready\": $translationReady,\n")
-                append("  \"tts_audio_path\": ")
-                append(
-                    if (result.ttsAudioPath != null) {
-                        "\"${jsonEscape(result.ttsAudioPath)}\""
-                    } else {
-                        "null"
-                    }
-                )
-                append(",\n")
-                append("  \"expects_tts_evidence\": $expectsTtsEvidence,\n")
-                append("  \"tts_ready\": $ttsReady,\n")
-                append("  \"tts_start_count\": ${result.ttsStartCount},\n")
-                append("  \"tts_mic_guard_violations\": ${result.ttsMicGuardViolations},\n")
-                append("  \"mic_stopped_for_tts\": ${result.micStoppedForTts},\n")
-                append("  \"pass\": ${result.pass},\n")
-                append("  \"duration_ms\": ${result.durationMs},\n")
-                append("  \"timestamp\": \"${jsonEscape(result.timestamp)}\",\n")
-                append("  \"error\": ")
-                append(
-                    if (result.error != null) {
-                        "\"${jsonEscape(result.error)}\""
-                    } else {
-                        "null"
-                    }
-                )
-                append("\n")
-                append("}")
-            }
             val extDir = context.getExternalFilesDir(null)
-            val file = File(extDir, "e2e_result_${model.id}.json")
+            val file = File(extDir, "e2e_result_${modelId}.json")
             file.writeText(json)
             Log.i("E2E", "Result written to ${file.absolutePath}")
         } catch (e: Throwable) {
@@ -1187,7 +1432,21 @@ class WhisperEngine(
     }
 
     private fun normalizeDisplayText(text: String): String {
-        return text.replace(WHITESPACE_REGEX, " ").trim()
+        val collapsed = text.replace(WHITESPACE_REGEX, " ").trim()
+        return normalizeCjkSpacing(collapsed)
+    }
+
+    private fun normalizeCjkSpacing(text: String): String {
+        var current = text
+        while (true) {
+            var next = current
+            next = CJK_INNER_SPACE_REGEX.replace(next, "$1$2")
+            next = SPACE_BEFORE_CJK_PUNCT_REGEX.replace(next, "$1")
+            next = SPACE_AFTER_CJK_OPEN_PUNCT_REGEX.replace(next, "$1")
+            next = SPACE_AFTER_CJK_END_PUNCT_REGEX.replace(next, "$1$2")
+            if (next == current) return next
+            current = next
+        }
     }
 
     private fun computeInferenceThreads(): Int {
@@ -1330,5 +1589,6 @@ class WhisperEngine(
         ttsService.shutdown()
         currentEngine?.release()
         currentEngine = null
+        prewarmedModelId = null
     }
 }

@@ -142,6 +142,9 @@ for MODEL_ID in "${MODELS[@]}"; do
     echo "--- Testing: $MODEL_ID ($METHOD) ---"
     echo "  Instrument timeout: ${MODEL_TIMEOUT_SEC}s"
     ensure_instrumentation_installed
+    # Avoid cross-app overlay contamination from previous runs.
+    $ADB shell am force-stop "$PACKAGE" 2>/dev/null || true
+    $ADB shell am force-stop "com.voiceping.transcribe" 2>/dev/null || true
     $ADB shell rm -rf "/sdcard/Documents/e2e/$MODEL_ID" 2>/dev/null || true
     $ADB shell rm -f "/sdcard/Android/data/$PACKAGE/files/e2e_result_${MODEL_ID}.json" 2>/dev/null || true
 

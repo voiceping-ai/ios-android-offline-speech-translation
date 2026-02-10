@@ -38,6 +38,11 @@ class StreamingChunkManager(
         const val CHUNK_SECONDS = 15.0f
         const val MIN_NEW_AUDIO_SECONDS = 1.0f
         private val WHITESPACE_REGEX = "\\s+".toRegex()
+        private const val CJK_CHAR_CLASS = "[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}々〆ヵヶー]"
+        private val CJK_INNER_SPACE_REGEX = "($CJK_CHAR_CLASS)\\s+($CJK_CHAR_CLASS)".toRegex()
+        private val SPACE_BEFORE_CJK_PUNCT_REGEX = "\\s+([、。！？：；）」』】〉》])".toRegex()
+        private val SPACE_AFTER_CJK_OPEN_PUNCT_REGEX = "([（「『【〈《])\\s+".toRegex()
+        private val SPACE_AFTER_CJK_END_PUNCT_REGEX = "([、。！？：；])\\s+($CJK_CHAR_CLASS)".toRegex()
     }
 
     /**
@@ -93,6 +98,20 @@ class StreamingChunkManager(
             }
         } else {
             newSegments
+        }
+
+        // Some offline engines (e.g., SenseVoice via sherpa-onnx) often return
+        // a single growing text segment without usable timestamps (0/0).
+        // In that mode, the prefix-matching confirmer can stall and appear delayed.
+        // Treat this as live committed chunk text so UI updates immediately.
+        if (adjustedSegments.size == 1 &&
+            adjustedSegments[0].startMs == 0L &&
+            adjustedSegments[0].endMs == 0L
+        ) {
+            prevUnconfirmedSegments = adjustedSegments
+            confirmedText = joinChunkTexts(completedChunksText, renderSegmentsText(adjustedSegments))
+            hypothesisText = ""
+            return
         }
 
         if (prevUnconfirmedSegments.isNotEmpty() && adjustedSegments.isNotEmpty()) {
@@ -205,7 +224,21 @@ class StreamingChunkManager(
     }
 
     fun normalizeText(text: String): String {
-        return text.replace(WHITESPACE_REGEX, " ").trim()
+        val collapsed = text.replace(WHITESPACE_REGEX, " ").trim()
+        return normalizeCjkSpacing(collapsed)
+    }
+
+    private fun normalizeCjkSpacing(text: String): String {
+        var current = text
+        while (true) {
+            var next = current
+            next = CJK_INNER_SPACE_REGEX.replace(next, "$1$2")
+            next = SPACE_BEFORE_CJK_PUNCT_REGEX.replace(next, "$1")
+            next = SPACE_AFTER_CJK_OPEN_PUNCT_REGEX.replace(next, "$1")
+            next = SPACE_AFTER_CJK_END_PUNCT_REGEX.replace(next, "$1$2")
+            if (next == current) return next
+            current = next
+        }
     }
 
     data class SliceInfo(

@@ -141,94 +141,131 @@ final class SherpaOnnxOfflineEngine: ASREngine {
                           userInfo: [NSLocalizedDescriptionKey: "tokens.txt not found at \(tokensPath)"])
         }
 
-        var modelConfig: SherpaOnnxOfflineModelConfig
+        let numThreads = recommendedOfflineThreads()
+        var lastError: Error?
 
-        switch config.modelType {
-        case .moonshine:
-            guard let preprocessor = config.preprocessor,
-                  let encoder = config.encoder,
-                  let uncachedDecoder = config.uncachedDecoder,
-                  let cachedDecoder = config.cachedDecoder else {
-                throw NSError(domain: "SherpaOnnxOfflineEngine", code: -3,
-                              userInfo: [NSLocalizedDescriptionKey: "Missing moonshine model file names in config"])
-            }
-            let paths = [preprocessor, encoder, uncachedDecoder, cachedDecoder]
-            for p in paths {
-                let fullPath = "\(modelDir)/\(p)"
-                guard fm.fileExists(atPath: fullPath) else {
-                    throw NSError(domain: "SherpaOnnxOfflineEngine", code: -3,
-                                  userInfo: [NSLocalizedDescriptionKey: "Model file not found: \(p)"])
+        for provider in preferredOfflineProviders() {
+            do {
+                var modelConfig: SherpaOnnxOfflineModelConfig
+
+                switch config.modelType {
+                case .moonshine:
+                    guard let preprocessor = config.preprocessor,
+                          let encoder = config.encoder,
+                          let uncachedDecoder = config.uncachedDecoder,
+                          let cachedDecoder = config.cachedDecoder else {
+                        throw NSError(domain: "SherpaOnnxOfflineEngine", code: -3,
+                                      userInfo: [NSLocalizedDescriptionKey: "Missing moonshine model file names in config"])
+                    }
+                    let paths = [preprocessor, encoder, uncachedDecoder, cachedDecoder]
+                    for p in paths {
+                        let fullPath = "\(modelDir)/\(p)"
+                        guard fm.fileExists(atPath: fullPath) else {
+                            throw NSError(domain: "SherpaOnnxOfflineEngine", code: -3,
+                                          userInfo: [NSLocalizedDescriptionKey: "Model file not found: \(p)"])
+                        }
+                    }
+                    let moonshineConfig = sherpaOnnxOfflineMoonshineModelConfig(
+                        preprocessor: "\(modelDir)/\(preprocessor)",
+                        encoder: "\(modelDir)/\(encoder)",
+                        uncachedDecoder: "\(modelDir)/\(uncachedDecoder)",
+                        cachedDecoder: "\(modelDir)/\(cachedDecoder)"
+                    )
+                    modelConfig = sherpaOnnxOfflineModelConfig(
+                        tokens: tokensPath,
+                        numThreads: numThreads,
+                        provider: provider,
+                        debug: 0,
+                        moonshine: moonshineConfig
+                    )
+
+                case .senseVoice:
+                    guard let senseVoiceModel = config.senseVoiceModel else {
+                        throw NSError(domain: "SherpaOnnxOfflineEngine", code: -4,
+                                      userInfo: [NSLocalizedDescriptionKey: "Missing SenseVoice model file name in config"])
+                    }
+                    let modelPath = "\(modelDir)/\(senseVoiceModel)"
+                    guard fm.fileExists(atPath: modelPath) else {
+                        throw NSError(domain: "SherpaOnnxOfflineEngine", code: -4,
+                                      userInfo: [NSLocalizedDescriptionKey: "Model file not found: \(senseVoiceModel)"])
+                    }
+                    let senseVoiceConfig = sherpaOnnxOfflineSenseVoiceModelConfig(
+                        model: modelPath,
+                        language: "",
+                        useInverseTextNormalization: true
+                    )
+                    modelConfig = sherpaOnnxOfflineModelConfig(
+                        tokens: tokensPath,
+                        numThreads: numThreads,
+                        provider: provider,
+                        debug: 0,
+                        senseVoice: senseVoiceConfig
+                    )
+
+                case .zipformerTransducer:
+                    throw NSError(domain: "SherpaOnnxOfflineEngine", code: -5,
+                                  userInfo: [NSLocalizedDescriptionKey: "Zipformer transducer should use streaming engine"])
+
+                case .omnilingualCtc:
+                    guard let omniModel = config.omnilingualModel else {
+                        throw NSError(domain: "SherpaOnnxOfflineEngine", code: -7,
+                                      userInfo: [NSLocalizedDescriptionKey: "Missing omnilingual model file name in config"])
+                    }
+                    let modelPath = "\(modelDir)/\(omniModel)"
+                    guard fm.fileExists(atPath: modelPath) else {
+                        throw NSError(domain: "SherpaOnnxOfflineEngine", code: -7,
+                                      userInfo: [NSLocalizedDescriptionKey: "Model file not found: \(omniModel)"])
+                    }
+                    let omniConfig = sherpaOnnxOfflineOmnilingualAsrCtcModelConfig(model: modelPath)
+                    modelConfig = sherpaOnnxOfflineModelConfig(
+                        tokens: tokensPath,
+                        numThreads: numThreads,
+                        provider: provider,
+                        debug: 0,
+                        omnilingual: omniConfig
+                    )
                 }
-            }
-            let moonshineConfig = sherpaOnnxOfflineMoonshineModelConfig(
-                preprocessor: "\(modelDir)/\(preprocessor)",
-                encoder: "\(modelDir)/\(encoder)",
-                uncachedDecoder: "\(modelDir)/\(uncachedDecoder)",
-                cachedDecoder: "\(modelDir)/\(cachedDecoder)"
-            )
-            modelConfig = sherpaOnnxOfflineModelConfig(
-                tokens: tokensPath,
-                numThreads: 2,
-                debug: 0,
-                moonshine: moonshineConfig
-            )
 
-        case .senseVoice:
-            guard let senseVoiceModel = config.senseVoiceModel else {
-                throw NSError(domain: "SherpaOnnxOfflineEngine", code: -4,
-                              userInfo: [NSLocalizedDescriptionKey: "Missing SenseVoice model file name in config"])
-            }
-            let modelPath = "\(modelDir)/\(senseVoiceModel)"
-            guard fm.fileExists(atPath: modelPath) else {
-                throw NSError(domain: "SherpaOnnxOfflineEngine", code: -4,
-                              userInfo: [NSLocalizedDescriptionKey: "Model file not found: \(senseVoiceModel)"])
-            }
-            let senseVoiceConfig = sherpaOnnxOfflineSenseVoiceModelConfig(
-                model: modelPath,
-                language: "",
-                useInverseTextNormalization: true
-            )
-            modelConfig = sherpaOnnxOfflineModelConfig(
-                tokens: tokensPath,
-                numThreads: 2,
-                debug: 0,
-                senseVoice: senseVoiceConfig
-            )
+                let featConfig = sherpaOnnxFeatureConfig(sampleRate: 16000, featureDim: 80)
+                var recognizerConfig = sherpaOnnxOfflineRecognizerConfig(
+                    featConfig: featConfig,
+                    modelConfig: modelConfig,
+                    decodingMethod: "greedy_search"
+                )
 
-        case .zipformerTransducer:
-            throw NSError(domain: "SherpaOnnxOfflineEngine", code: -5,
-                          userInfo: [NSLocalizedDescriptionKey: "Zipformer transducer should use streaming engine"])
-
-        case .omnilingualCtc:
-            guard let omniModel = config.omnilingualModel else {
-                throw NSError(domain: "SherpaOnnxOfflineEngine", code: -7,
-                              userInfo: [NSLocalizedDescriptionKey: "Missing omnilingual model file name in config"])
+                guard let recognizer = SherpaOnnxOfflineRecognizer(config: &recognizerConfig) else {
+                    throw NSError(domain: "SherpaOnnxOfflineEngine", code: -6,
+                                  userInfo: [NSLocalizedDescriptionKey: "Failed to create offline recognizer for provider \(provider)"])
+                }
+                return recognizer
+            } catch {
+                lastError = error
+                NSLog("SherpaOnnxOfflineEngine: provider %@ failed with error: %@", provider, "\(error)")
             }
-            let modelPath = "\(modelDir)/\(omniModel)"
-            guard fm.fileExists(atPath: modelPath) else {
-                throw NSError(domain: "SherpaOnnxOfflineEngine", code: -7,
-                              userInfo: [NSLocalizedDescriptionKey: "Model file not found: \(omniModel)"])
-            }
-            let omniConfig = sherpaOnnxOfflineOmnilingualAsrCtcModelConfig(model: modelPath)
-            modelConfig = sherpaOnnxOfflineModelConfig(
-                tokens: tokensPath,
-                numThreads: 2,
-                debug: 0,
-                omnilingual: omniConfig
-            )
         }
 
-        let featConfig = sherpaOnnxFeatureConfig(sampleRate: 16000, featureDim: 80)
-        var recognizerConfig = sherpaOnnxOfflineRecognizerConfig(
-            featConfig: featConfig,
-            modelConfig: modelConfig,
-            decodingMethod: "greedy_search"
+        throw lastError ?? NSError(
+            domain: "SherpaOnnxOfflineEngine",
+            code: -6,
+            userInfo: [NSLocalizedDescriptionKey: "Failed to create offline recognizer for all providers"]
         )
+    }
 
-        guard let recognizer = SherpaOnnxOfflineRecognizer(config: &recognizerConfig) else {
-            throw NSError(domain: "SherpaOnnxOfflineEngine", code: -6,
-                          userInfo: [NSLocalizedDescriptionKey: "Failed to create offline recognizer — model files may be invalid"])
+    private nonisolated static func preferredOfflineProviders() -> [String] {
+        ["coreml", "cpu"]
+    }
+
+    private nonisolated static func recommendedOfflineThreads() -> Int {
+        let cores = max(ProcessInfo.processInfo.activeProcessorCount, 1)
+        switch cores {
+        case 0 ... 2:
+            return 1
+        case 3 ... 4:
+            return 2
+        case 5 ... 8:
+            return 4
+        default:
+            return 6
         }
-        return recognizer
     }
 }

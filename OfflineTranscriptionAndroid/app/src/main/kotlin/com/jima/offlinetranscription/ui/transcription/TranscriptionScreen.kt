@@ -43,7 +43,7 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            viewModel.toggleRecording()
+            viewModel.startRecordingWithPreparation()
         }
     }
 
@@ -52,8 +52,10 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
             context, Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
 
-        if (hasPermission || viewModel.isRecording.value) {
+        if (viewModel.isRecording.value) {
             viewModel.toggleRecording()
+        } else if (hasPermission) {
+            viewModel.startRecordingWithPreparation()
         } else {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
@@ -102,6 +104,11 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
         if (isRecording || displayConfirmedText.isNotEmpty() || displayHypothesisText.isNotEmpty()) {
             scrollState.scrollTo(scrollState.maxValue)
         }
+    }
+
+    // Pre-initialize mic recorder setup on screen entry to avoid first-utterance clipping.
+    LaunchedEffect(Unit) {
+        viewModel.prewarmOnScreenOpen()
     }
 
     Scaffold(

@@ -20,6 +20,15 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
 class MainActivity : ComponentActivity() {
+    private fun e2eLoadTimeoutMs(modelId: String): Long = when {
+        modelId.contains("large") -> 1_200_000L
+        modelId.contains("omnilingual") -> 600_000L
+        modelId.contains("parakeet") -> 900_000L
+        modelId.contains("small") -> 1_200_000L
+        modelId.contains("base") -> 600_000L
+        else -> 120_000L
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -49,14 +58,19 @@ class MainActivity : ComponentActivity() {
                             app.whisperEngine.setupModel()
 
                             // Wait for model to load (with timeout and error escape)
-                            Log.i("E2E", "Waiting for model to load...")
-                            val finalState = withTimeoutOrNull(120_000L) {
+                            val timeoutMs = e2eLoadTimeoutMs(e2eModelId)
+                            Log.i("E2E", "Waiting for model to load (timeout=${timeoutMs}ms)...")
+                            val finalState = withTimeoutOrNull(timeoutMs) {
                                 app.whisperEngine.modelState.first {
                                     it == ModelState.Loaded || it == ModelState.Unloaded
                                 }
                             }
                             if (finalState != ModelState.Loaded) {
                                 Log.e("E2E", "Model failed to load (state=$finalState), aborting E2E")
+                                app.whisperEngine.writeE2EFailure(
+                                    modelId = e2eModelId,
+                                    error = "model load failed/timed out (state=$finalState, timeout_ms=$timeoutMs)"
+                                )
                                 isLoading = false
                                 return@LaunchedEffect
                             }
@@ -80,6 +94,10 @@ class MainActivity : ComponentActivity() {
                             app.whisperEngine.transcribeFile(wavPath)
                         } else {
                             Log.e("E2E", "Model $e2eModelId not found")
+                            app.whisperEngine.writeE2EFailure(
+                                modelId = e2eModelId,
+                                error = "model not found"
+                            )
                             app.whisperEngine.loadModelIfAvailable()
                             isLoading = false
                         }

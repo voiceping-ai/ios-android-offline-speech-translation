@@ -95,7 +95,7 @@ class AllModelsE2ETest {
 
         // 4. Wait for transcription screen (model loaded) — look for "CPU" text in stats bar
         val cpuFound = device.wait(
-            Until.hasObject(By.textContains("CPU")),
+            Until.hasObject(By.pkg(packageNameUnderTest).textContains("CPU")),
             timeoutMs
         )
         if (cpuFound) {
@@ -119,7 +119,9 @@ class AllModelsE2ETest {
                 break
             }
             // Check for E2E evidence overlay in UI
-            val overlayElement = device.findObject(By.textContains("E2E EVIDENCE"))
+            val overlayElement = device.findObject(
+                By.pkg(packageNameUnderTest).textContains("E2E EVIDENCE")
+            )
             if (overlayElement != null) {
                 Log.i(TAG, "[$modelId] E2E overlay detected")
                 resultExists = true
@@ -139,6 +141,19 @@ class AllModelsE2ETest {
         }
         if (resultExists) {
             val srcFile = File(resultSrc)
+            if (!srcFile.exists()) {
+                // Overlay may appear slightly before file flush; wait briefly for write.
+                val flushWaitStart = System.currentTimeMillis()
+                while (!srcFile.exists() && System.currentTimeMillis() - flushWaitStart < 10_000L) {
+                    Thread.sleep(200)
+                }
+            }
+            if (!srcFile.exists()) {
+                Log.e(TAG, "[$modelId] Overlay appeared but result.json is missing at $resultSrc")
+                val missingJson = """{"model_id":"$modelId","pass":false,"error":"result_json_missing"}"""
+                File(evidenceDir, "result.json").writeText(missingJson)
+                assertTrue(false, "[$modelId] result.json missing after overlay detection")
+            }
             srcFile.copyTo(File(evidenceDir, "result.json"), overwrite = true)
             val json = srcFile.readText().trim()
             Log.i(TAG, "[$modelId] result.json: $json")

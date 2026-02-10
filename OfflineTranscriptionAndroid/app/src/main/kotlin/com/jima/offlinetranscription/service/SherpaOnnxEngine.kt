@@ -1,5 +1,6 @@
 package com.voiceping.offlinetranscription.service
 
+import android.os.Build
 import android.util.Log
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
@@ -39,15 +40,31 @@ class SherpaOnnxEngine(
         release()
         return withContext(Dispatchers.IO) {
             lock.withLock {
+                val providers = preferredProviders()
+                val threads = computeOfflineThreads()
+                var lastError: Throwable? = null
                 try {
-                    val config = buildConfig(modelPath)
-                    recognizer = OfflineRecognizer(config = config)
-                    true
-                } catch (e: Throwable) {
-                    Log.e(TAG, "Failed to load sherpa model from $modelPath", e)
-                    recognizer = null
-                    false
+                    for (provider in providers) {
+                        try {
+                            val config = buildConfig(
+                                modelDir = modelPath,
+                                threads = threads,
+                                provider = provider
+                            )
+                            recognizer = OfflineRecognizer(config = config)
+                            Log.i(TAG, "Loaded sherpa model with provider=$provider threads=$threads")
+                            return@withContext true
+                        } catch (e: Throwable) {
+                            lastError = e
+                            Log.w(TAG, "Failed to initialize provider=$provider, trying fallback", e)
+                        }
+                    }
+                } catch (outer: Throwable) {
+                    lastError = outer
                 }
+                Log.e(TAG, "Failed to load sherpa model from $modelPath", lastError)
+                recognizer = null
+                false
             }
         }
     }
@@ -87,9 +104,8 @@ class SherpaOnnxEngine(
         }
     }
 
-    private fun buildConfig(modelDir: String): OfflineRecognizerConfig {
+    private fun buildConfig(modelDir: String, threads: Int, provider: String): OfflineRecognizerConfig {
         val tokensPath = File(modelDir, "tokens.txt").absolutePath
-        val threads = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
 
         val modelConfig = when (modelType) {
             SherpaModelType.MOONSHINE -> OfflineModelConfig(
@@ -102,7 +118,7 @@ class SherpaOnnxEngine(
                 tokens = tokensPath,
                 numThreads = threads,
                 debug = false,
-                provider = "cpu",
+                provider = provider,
             )
             SherpaModelType.ZIPFORMER_TRANSDUCER -> throw IllegalArgumentException(
                 "ZIPFORMER_TRANSDUCER should use SherpaOnnxStreamingEngine, not SherpaOnnxEngine"
@@ -116,7 +132,7 @@ class SherpaOnnxEngine(
                 tokens = tokensPath,
                 numThreads = threads,
                 debug = false,
-                provider = "cpu",
+                provider = provider,
             )
             SherpaModelType.OMNILINGUAL_CTC -> OfflineModelConfig(
                 omnilingual = OfflineOmnilingualAsrCtcModelConfig(
@@ -125,7 +141,7 @@ class SherpaOnnxEngine(
                 tokens = tokensPath,
                 numThreads = threads,
                 debug = false,
-                provider = "cpu",
+                provider = provider,
             )
             SherpaModelType.PARAKEET_NEMO_TRANSDUCER -> OfflineModelConfig(
                 transducer = OfflineTransducerModelConfig(
@@ -136,7 +152,7 @@ class SherpaOnnxEngine(
                 tokens = tokensPath,
                 numThreads = threads,
                 debug = false,
-                provider = "cpu",
+                provider = provider,
                 // Required by sherpa-onnx for NeMo transducer exports (Parakeet-TDT).
                 modelType = "nemo_transducer",
             )
@@ -147,6 +163,25 @@ class SherpaOnnxEngine(
             modelConfig = modelConfig,
             decodingMethod = "greedy_search",
         )
+    }
+
+    private fun computeOfflineThreads(): Int {
+        val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        return when {
+            cores <= 2 -> 1
+            cores <= 4 -> 2
+            cores <= 8 -> 4
+            else -> 6
+        }
+    }
+
+    private fun preferredProviders(): List<String> {
+        val providers = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= 27) {
+            providers += "nnapi"
+        }
+        providers += "cpu"
+        return providers
     }
 
     /** Find the int8 version of a model file, falling back to the non-quantized version. */

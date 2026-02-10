@@ -225,26 +225,63 @@ final class SherpaOnnxStreamingEngine: ASREngine {
             joiner: "\(modelDir)/\(joiner)"
         )
 
-        let modelConfig = sherpaOnnxOnlineModelConfig(
-            tokens: tokensPath,
-            transducer: transducerConfig,
-            numThreads: 2,
-            debug: 0
-        )
+        let numThreads = recommendedStreamingThreads()
+        var lastError: Error?
 
-        let featConfig = sherpaOnnxFeatureConfig(sampleRate: 16000, featureDim: 80)
+        for provider in preferredStreamingProviders() {
+            let modelConfig = sherpaOnnxOnlineModelConfig(
+                tokens: tokensPath,
+                transducer: transducerConfig,
+                numThreads: numThreads,
+                provider: provider,
+                debug: 0
+            )
 
-        var recognizerConfig = sherpaOnnxOnlineRecognizerConfig(
-            featConfig: featConfig,
-            modelConfig: modelConfig,
-            enableEndpoint: true,
-            decodingMethod: "greedy_search"
-        )
+            let featConfig = sherpaOnnxFeatureConfig(sampleRate: 16000, featureDim: 80)
 
-        guard let recognizer = SherpaOnnxRecognizer(config: &recognizerConfig) else {
-            throw NSError(domain: "SherpaOnnxStreamingEngine", code: -4,
-                          userInfo: [NSLocalizedDescriptionKey: "Failed to create streaming recognizer — model files may be invalid"])
+            var recognizerConfig = sherpaOnnxOnlineRecognizerConfig(
+                featConfig: featConfig,
+                modelConfig: modelConfig,
+                enableEndpoint: true,
+                rule1MinTrailingSilence: 1.8,
+                rule2MinTrailingSilence: 0.8,
+                rule3MinUtteranceLength: 20.0,
+                decodingMethod: "greedy_search"
+            )
+
+            guard let recognizer = SherpaOnnxRecognizer(config: &recognizerConfig) else {
+                let error = NSError(
+                    domain: "SherpaOnnxStreamingEngine",
+                    code: -4,
+                    userInfo: [NSLocalizedDescriptionKey: "Failed to create streaming recognizer for provider \(provider)"]
+                )
+                lastError = error
+                NSLog("SherpaOnnxStreamingEngine: provider %@ failed with error: %@", provider, "\(error)")
+                continue
+            }
+            return recognizer
         }
-        return recognizer
+
+        throw lastError ?? NSError(
+            domain: "SherpaOnnxStreamingEngine",
+            code: -4,
+            userInfo: [NSLocalizedDescriptionKey: "Failed to create streaming recognizer for all providers"]
+        )
+    }
+
+    private nonisolated static func preferredStreamingProviders() -> [String] {
+        ["coreml", "cpu"]
+    }
+
+    private nonisolated static func recommendedStreamingThreads() -> Int {
+        let cores = max(ProcessInfo.processInfo.activeProcessorCount, 1)
+        switch cores {
+        case 0 ... 2:
+            return 1
+        case 3 ... 4:
+            return 2
+        default:
+            return 4
+        }
     }
 }

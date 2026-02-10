@@ -54,7 +54,20 @@ class TranscriptionViewModel(
         if (engine.isRecording.value) {
             engine.stopRecording()
         } else {
+            startRecordingWithPreparation()
+        }
+    }
+
+    fun startRecordingWithPreparation() {
+        viewModelScope.launch {
+            engine.prewarmRealtimePath()
             engine.startRecording()
+        }
+    }
+
+    fun prewarmOnScreenOpen() {
+        viewModelScope.launch {
+            engine.prewarmRealtimePath()
         }
     }
 

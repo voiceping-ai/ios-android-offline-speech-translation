@@ -10,10 +10,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 SIMULATOR_ID="578CBE53-DFDD-4BC5-874C-5F96A59A5C64"
+IOS_DEVICE_ID="${IOS_DEVICE_ID:-}"
+USE_REAL_DEVICE=false
 EVIDENCE_DIR="${EVIDENCE_DIR:-$PROJECT_DIR/artifacts/e2e/ios}"
 WAV_SOURCE="${EVAL_WAV_PATH:-$PROJECT_DIR/artifacts/benchmarks/long_en_eval.wav}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$PROJECT_DIR/build/DerivedData}"
 USE_XCUITEST=false
+
+if [ -n "$IOS_DEVICE_ID" ]; then
+    USE_REAL_DEVICE=true
+    USE_XCUITEST=true
+fi
 
 ALL_MODELS=(
     "sensevoice-small"
@@ -48,6 +55,7 @@ get_wait_time() {
 
 echo "=== iOS E2E Test Suite ==="
 echo "Mode: $([ "$USE_XCUITEST" = true ] && echo "XCUITest" || echo "simctl")"
+echo "Target: $([ "$USE_REAL_DEVICE" = true ] && echo "real-device:$IOS_DEVICE_ID" || echo "simulator:$SIMULATOR_ID")"
 echo "Models to test: ${MODELS[*]}"
 echo "Audio fixture: $WAV_SOURCE"
 echo "Evidence directory: $EVIDENCE_DIR"
@@ -65,9 +73,11 @@ fi
 cp "$WAV_SOURCE" /private/tmp/test_speech.wav
 echo "Test WAV placed at /private/tmp/test_speech.wav"
 
-# Ensure simulator is booted
-xcrun simctl boot "$SIMULATOR_ID" 2>/dev/null || true
-sleep 3
+# Ensure simulator is booted only when using simulator mode
+if [ "$USE_REAL_DEVICE" = false ]; then
+    xcrun simctl boot "$SIMULATOR_ID" 2>/dev/null || true
+    sleep 3
+fi
 
 # --- XCUITest mode ---
 if [ "$USE_XCUITEST" = true ]; then
@@ -102,10 +112,15 @@ if [ "$USE_XCUITEST" = true ]; then
         rm -rf "/tmp/e2e_evidence/${MODEL_ID}"
 
         # Run individual XCUITest
+        DESTINATION_ARG="platform=iOS Simulator,id=$SIMULATOR_ID"
+        if [ "$USE_REAL_DEVICE" = true ]; then
+            DESTINATION_ARG="id=$IOS_DEVICE_ID"
+        fi
+
         RESULT=$(xcodebuild test \
             -project "$PROJECT_DIR/OfflineTranscription.xcodeproj" \
             -scheme OfflineTranscription \
-            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -destination "$DESTINATION_ARG" \
             -only-testing:"OfflineTranscriptionUITests/AllModelsE2ETest/$METHOD" \
             -resultBundlePath "$MODEL_DIR/result.xcresult" \
             2>&1 || true)
@@ -157,6 +172,11 @@ if [ "$USE_XCUITEST" = true ]; then
 fi
 
 # --- simctl mode (default) ---
+
+if [ "$USE_REAL_DEVICE" = true ]; then
+    echo "ERROR: simctl mode is not supported for real devices. Use --xcuitest or set IOS_DEVICE_ID."
+    exit 1
+fi
 
 # Build latest app in repo-local DerivedData
 echo "Building app..."

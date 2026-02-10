@@ -1114,4 +1114,18 @@ class StreamingChunkManagerTest {
         assertTrue(manager.completedChunksText.contains("alpha"))
         assertTrue(manager.completedChunksText.contains("beta"))
     }
+
+    @Test
+    fun normalizeText_cjkSpacingCollapsed() {
+        val input = "そう で、すねこう いう 感じ で 動 いてま。 お願いし ます。"
+        val normalized = manager.normalizeText(input)
+        assertEquals("そうで、すねこういう感じで動いてま。お願いします。", normalized)
+    }
+
+    @Test
+    fun normalizeText_englishSpacingPreserved() {
+        val input = "Hello   world   from  test"
+        val normalized = manager.normalizeText(input)
+        assertEquals("Hello world from test", normalized)
+    }
 }

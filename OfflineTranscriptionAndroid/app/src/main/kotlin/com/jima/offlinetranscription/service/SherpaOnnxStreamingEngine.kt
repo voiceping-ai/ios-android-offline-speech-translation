@@ -1,6 +1,9 @@
 package com.voiceping.offlinetranscription.service
 
+import android.os.Build
 import android.util.Log
+import com.k2fsa.sherpa.onnx.EndpointConfig
+import com.k2fsa.sherpa.onnx.EndpointRule
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OnlineModelConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
@@ -44,6 +47,9 @@ class SherpaOnnxStreamingEngine : AsrEngine {
         return withContext(Dispatchers.IO) {
             lock.withLock {
                 decodeExecutor = Executors.newSingleThreadExecutor()
+                val providers = preferredProviders()
+                val threads = computeStreamingThreads()
+                var lastError: Throwable? = null
                 try {
                     val tokensPath = File(modelPath, "tokens.txt").absolutePath
                     val encoderPath = findFile(modelPath, "encoder")
@@ -56,31 +62,57 @@ class SherpaOnnxStreamingEngine : AsrEngine {
                         joiner = joinerPath,
                     )
 
-                    val modelConfig = OnlineModelConfig(
-                        transducer = transducerConfig,
-                        tokens = tokensPath,
-                        numThreads = 2,
-                        debug = false,
-                        provider = "cpu",
-                    )
+                    for (provider in providers) {
+                        try {
+                            val modelConfig = OnlineModelConfig(
+                                transducer = transducerConfig,
+                                tokens = tokensPath,
+                                numThreads = threads,
+                                debug = false,
+                                provider = provider,
+                            )
 
-                    val config = OnlineRecognizerConfig(
-                        featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
-                        modelConfig = modelConfig,
-                        enableEndpoint = true,
-                        decodingMethod = "greedy_search",
-                    )
+                            val config = OnlineRecognizerConfig(
+                                featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
+                                modelConfig = modelConfig,
+                                endpointConfig = EndpointConfig(
+                                    rule1 = EndpointRule(
+                                        mustContainNonSilence = false,
+                                        minTrailingSilence = 1.8f,
+                                        minUtteranceLength = 0.0f,
+                                    ),
+                                    rule2 = EndpointRule(
+                                        mustContainNonSilence = true,
+                                        minTrailingSilence = 0.8f,
+                                        minUtteranceLength = 0.0f,
+                                    ),
+                                    rule3 = EndpointRule(
+                                        mustContainNonSilence = false,
+                                        minTrailingSilence = 0.0f,
+                                        minUtteranceLength = 20.0f,
+                                    ),
+                                ),
+                                enableEndpoint = true,
+                                decodingMethod = "greedy_search",
+                            )
 
-                    val rec = OnlineRecognizer(config = config)
-                    recognizer = rec
-                    stream = rec.createStream()
-                    true
-                } catch (e: Throwable) {
-                    Log.e(TAG, "Failed to load streaming model from $modelPath", e)
-                    recognizer = null
-                    stream = null
-                    false
+                            val rec = OnlineRecognizer(config = config)
+                            recognizer = rec
+                            stream = rec.createStream()
+                            Log.i(TAG, "Loaded streaming model with provider=$provider threads=$threads")
+                            return@withContext true
+                        } catch (e: Throwable) {
+                            lastError = e
+                            Log.w(TAG, "Failed to initialize provider=$provider, trying fallback", e)
+                        }
+                    }
+                } catch (outer: Throwable) {
+                    lastError = outer
                 }
+                Log.e(TAG, "Failed to load streaming model from $modelPath", lastError)
+                recognizer = null
+                stream = null
+                false
             }
         }
     }
@@ -202,5 +234,23 @@ class SherpaOnnxStreamingEngine : AsrEngine {
 
         // Last resort: construct expected path
         return File(dir, "$baseName.onnx").absolutePath
+    }
+
+    private fun computeStreamingThreads(): Int {
+        val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        return when {
+            cores <= 2 -> 1
+            cores <= 4 -> 2
+            else -> 4
+        }
+    }
+
+    private fun preferredProviders(): List<String> {
+        val providers = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= 27) {
+            providers += "nnapi"
+        }
+        providers += "cpu"
+        return providers
     }
 }
