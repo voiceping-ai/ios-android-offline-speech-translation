@@ -95,3 +95,11 @@ schemes:
     test:
       targets:
         - name: OfflineTranscriptionCITests
+  OfflineTranscriptionE2ECI:
+    build:
+      targets:
+        OfflineTranscription: all
+        OfflineTranscriptionUITests: all
+    test:
+      targets:
+        - name: OfflineTranscriptionUITests

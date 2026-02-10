@@ -9,6 +9,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 PROJECT_FILE="$PROJECT_DIR/VoicePingIOSAndroidOfflineSpeechTranslation.xcodeproj"
 SCHEME="${IOS_SCHEME:-OfflineTranscriptionCI}"
+E2E_BUILD_SCHEME="${IOS_E2E_SCHEME:-OfflineTranscriptionE2ECI}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$PROJECT_DIR/build/DerivedData}"
 TEST_FILTER="${IOS_TEST_FILTER:-OfflineTranscriptionCITests/SessionStateCITests}"
 
@@ -61,6 +62,14 @@ else
 fi
 
 set -o pipefail
+xcodebuild build-for-testing \
+  -project "$PROJECT_FILE" \
+  -scheme "$E2E_BUILD_SCHEME" \
+  -destination "$DESTINATION" \
+  -configuration Debug \
+  -derivedDataPath "$DERIVED_DATA_PATH" \
+  CODE_SIGNING_ALLOWED=NO
+
 xcodebuild test \
   -project "$PROJECT_FILE" \
   -scheme "$SCHEME" \
