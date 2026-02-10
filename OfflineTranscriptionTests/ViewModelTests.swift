@@ -37,24 +37,19 @@ final class ViewModelTests: XCTestCase {
     }
 
     // MARK: - Iteration 3
-    func testModelManagementViewModelState() {
-        let vm = ModelManagementViewModel(whisperService: WhisperService())
-        XCTAssertFalse(vm.isDownloading)
-        XCTAssertFalse(vm.isLoading)
-        XCTAssertFalse(vm.isReady)
-        XCTAssertEqual(vm.downloadProgress, 0.0)
-        XCTAssertNil(vm.errorMessage)
-        XCTAssertEqual(vm.selectedModel.id, "whisper-base")
+    func testServiceDefaultModelSelection() {
+        let service = WhisperService()
+        XCTAssertEqual(service.selectedModel.id, "sensevoice-small")
+        XCTAssertEqual(service.selectedModel.family, .senseVoice)
+        XCTAssertEqual(service.selectedModel.engineType, .sherpaOnnxOffline)
     }
 
     // MARK: - Iteration 4
-    func testModelSelectionChange() {
+    func testServiceModelSelectionChange() {
         let service = WhisperService()
-        let vm = ModelManagementViewModel(whisperService: service)
-        let whisperTiny = ModelInfo.availableModels.first { $0.id == "whisper-tiny" }!
-        vm.selectedModel = whisperTiny
-        XCTAssertEqual(vm.selectedModel.id, "whisper-tiny")
-        XCTAssertEqual(service.selectedModel.id, "whisper-tiny")
+        let defaultModel = ModelInfo.defaultModel
+        service.selectedModel = defaultModel
+        XCTAssertEqual(service.selectedModel.id, defaultModel.id)
     }
 
     // MARK: - Iteration 5: Save empty transcription is no-op
@@ -88,13 +83,10 @@ final class ViewModelTests: XCTestCase {
         XCTAssertTrue(vm.showError)
     }
 
-    // MARK: - Iteration 8: isModelDownloaded delegates to service
-    func testIsModelDownloaded() {
-        let service = WhisperService()
-        let vm = ModelManagementViewModel(whisperService: service)
-        for model in ModelInfo.availableModels {
-            XCTAssertEqual(vm.isModelDownloaded(model), service.isModelDownloaded(model))
-        }
+    // MARK: - Iteration 8: Model catalog exists for selection UI
+    func testModelCatalogContainsDefaultModel() {
+        XCTAssertFalse(ModelInfo.availableModels.isEmpty)
+        XCTAssertTrue(ModelInfo.availableModels.contains(ModelInfo.defaultModel))
     }
 
     // MARK: - Iteration 9: Multiple SwiftData records

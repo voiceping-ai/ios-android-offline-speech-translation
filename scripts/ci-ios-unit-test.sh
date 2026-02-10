@@ -8,9 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 PROJECT_FILE="$PROJECT_DIR/VoicePingIOSAndroidOfflineSpeechTranslation.xcodeproj"
-SCHEME="OfflineTranscription"
+SCHEME="${IOS_SCHEME:-OfflineTranscriptionCI}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$PROJECT_DIR/build/DerivedData}"
-TEST_FILTER="${IOS_TEST_FILTER:-OfflineTranscriptionTests/SessionStateTests}"
+TEST_FILTER="${IOS_TEST_FILTER:-OfflineTranscriptionCITests/SessionStateCITests}"
 
 resolve_simulator_udid() {
   python3 - <<'PY'

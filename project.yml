@@ -73,3 +73,25 @@ targets:
         GENERATE_INFOPLIST_FILE: "YES"
     dependencies:
       - target: OfflineTranscription
+
+  OfflineTranscriptionCITests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OfflineTranscriptionCITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.voiceping.translate-ci-tests
+        GENERATE_INFOPLIST_FILE: "YES"
+    dependencies:
+      - target: OfflineTranscription
+
+schemes:
+  OfflineTranscriptionCI:
+    build:
+      targets:
+        OfflineTranscription: all
+        OfflineTranscriptionCITests: all
+    test:
+      targets:
+        - name: OfflineTranscriptionCITests
