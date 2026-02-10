@@ -1,5 +1,8 @@
 # VoicePing iOS + Android Offline Speech Translation
 
+[![iOS Build](https://github.com/voiceping-ai/voiceping-ios-android-offline-speech-translation/actions/workflows/ios-build.yml/badge.svg)](https://github.com/voiceping-ai/voiceping-ios-android-offline-speech-translation/actions/workflows/ios-build.yml)
+[![Android Build](https://github.com/voiceping-ai/voiceping-ios-android-offline-speech-translation/actions/workflows/android-build.yml/badge.svg)](https://github.com/voiceping-ai/voiceping-ios-android-offline-speech-translation/actions/workflows/android-build.yml)
+
 Cross-platform (iOS + Android) app for **fully offline speech-to-text transcription, text translation, and text-to-speech** — all inference runs on-device with no cloud dependency.
 
 - **Transcription**: Record speech and transcribe it locally using multiple ASR engines (Whisper, Moonshine, SenseVoice, Zipformer, Parakeet). Batch and real-time streaming modes.

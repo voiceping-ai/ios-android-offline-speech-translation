@@ -1,0 +1,49 @@
+name: iOS Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Download iOS binary dependencies
+        run: |
+          chmod +x ./scripts/setup-ios-deps.sh
+          ./scripts/setup-ios-deps.sh
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build iOS app (Simulator)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project VoicePingIOSAndroidOfflineSpeechTranslation.xcodeproj \
+            -scheme OfflineTranscription \
+            -destination "generic/platform=iOS Simulator" \
+            -configuration Debug \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-app
+          path: build/DerivedData/Build/Products/Debug-iphonesimulator/OfflineTranscription.app
+          if-no-files-found: error
