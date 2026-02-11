@@ -1,26 +1,37 @@
+<p align="center">
+  <img src="assets/app-icon.png" width="120" alt="App Icon"/>
+</p>
+
 # VoicePing iOS + Android Offline Speech Translation
 
-[![iOS Build](https://github.com/voiceping-ai/voiceping-ios-android-offline-speech-translation/actions/workflows/ios-build.yml/badge.svg)](https://github.com/voiceping-ai/voiceping-ios-android-offline-speech-translation/actions/workflows/ios-build.yml)
-[![Android Build](https://github.com/voiceping-ai/voiceping-ios-android-offline-speech-translation/actions/workflows/android-build.yml/badge.svg)](https://github.com/voiceping-ai/voiceping-ios-android-offline-speech-translation/actions/workflows/android-build.yml)
+[![iOS Build](https://github.com/voiceping-ai/ios-android-offline-speech-translation/actions/workflows/ios-build.yml/badge.svg)](https://github.com/voiceping-ai/ios-android-offline-speech-translation/actions/workflows/ios-build.yml)
+[![Android Build](https://github.com/voiceping-ai/ios-android-offline-speech-translation/actions/workflows/android-build.yml/badge.svg)](https://github.com/voiceping-ai/ios-android-offline-speech-translation/actions/workflows/android-build.yml)
+[![iOS](https://img.shields.io/badge/iOS-17%2B-black)](#tech-stack)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84)](#tech-stack)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue)](#license)
 
-Cross-platform (iOS + Android) app for **fully offline speech-to-text transcription, text translation, and text-to-speech** — all inference runs on-device with no cloud dependency.
+Cross-platform app for **fully offline speech-to-text transcription, text translation, and text-to-speech** — all inference runs on-device with no cloud dependency.
 
-- **Transcription**: Record speech and transcribe it locally using multiple ASR engines (Whisper, Moonshine, SenseVoice, Zipformer, Parakeet, Apple Speech, Android SpeechRecognizer). Batch and real-time streaming modes.
-- **Translation**: Translate transcribed text on-device (iOS: Apple Translation framework, Android: Google ML Kit Translation or Android System Translation).
-- **Text-to-Speech**: Read text aloud using native TTS (iOS: AVSpeechSynthesizer, Android: TextToSpeech API).
-- **Audio Playback & Export**: Save session audio as WAV, play back with waveform scrubber, and export sessions as ZIP.
+- **Transcription**: Multiple ASR engines (Whisper, Moonshine, SenseVoice, Zipformer, Parakeet, Apple Speech, Android SpeechRecognizer). Batch and real-time streaming modes.
+- **Translation**: On-device translation (iOS: Apple Translation framework, Android: Google ML Kit / Android System Translation).
+- **Text-to-Speech**: Native TTS (iOS: AVSpeechSynthesizer, Android: TextToSpeech API).
+- **Audio Playback & Export**: Save session audio as WAV, play back with waveform scrubber, export as ZIP.
 
 Models are downloaded once from HuggingFace, then all processing works completely offline. Some engines (Apple Speech, Android SpeechRecognizer) are built into the OS and require no download.
+
+> **Related repos:**
+> [iOS Transcription Only](https://github.com/voiceping-ai/ios-offline-transcribe) ·
+> [Android Transcription Only](https://github.com/voiceping-ai/android-offline-transcribe)
 
 ## Features
 
 ### Both Platforms
+
 - Real-time microphone recording with live transcript rendering
 - Multiple ASR engine backends with in-app model switching
 - On-device model download with progress tracking
 - Streaming transcription (Zipformer transducer, endpoint-based)
-- On-device translation
-- Text-to-speech playback
+- On-device translation and text-to-speech playback
 - Voice Activity Detection (VAD) toggle
 - Optional timestamp display
 - Session audio saving as WAV (PCM 16kHz mono 16-bit)
@@ -31,29 +42,28 @@ Models are downloaded once from HuggingFace, then all processing works completel
 - CPU / memory / tokens-per-second telemetry display
 - Storage guard before large model downloads
 
-### iOS (SwiftUI + SwiftData)
-- 5 ASR engines: WhisperKit (CoreML), sherpa-onnx offline, sherpa-onnx streaming, FluidAudio (Parakeet-TDT), Apple Speech (SFSpeechRecognizer)
+### iOS
+
+- 5 ASR engines: WhisperKit (CoreML), sherpa-onnx offline, sherpa-onnx streaming, FluidAudio (Parakeet-TDT), Apple Speech
 - 12 models across 7 families
 - Apple Translation framework (iOS 18+)
 - AVSpeechSynthesizer TTS
-- AVAudioSession interruption + route change handling
 - Zero-dependency ZIP via NSFileCoordinator
 
-### Android (Kotlin + Compose + Room)
+### Android
+
 - 4 ASR engines: whisper.cpp (JNI), sherpa-onnx offline, sherpa-onnx streaming, Android SpeechRecognizer
 - 13 models across 5 families + system speech (offline & online)
-- Google ML Kit Translation (offline, 50+ languages) or Android System Translation (TranslationManager API 31+)
-- Android SpeechRecognizer: built-in on-device STT — offline mode (guaranteed on-device, API 31+) and online mode (cloud-backed, API 26+)
+- Google ML Kit Translation (offline, 50+ languages) or Android System Translation (API 31+)
 - TextToSpeech API
-- Room database with manual migration (v1 to v2)
-- FileProvider-based session sharing
+- Room database with manual migration
 
 ## Supported Models
 
 ### iOS (12 models)
 
 | Model | Engine | Size | Params | Languages |
-|-------|--------|------|--------|-----------|
+|---|---|---:|---:|---|
 | Whisper Tiny | WhisperKit (CoreML) | ~80 MB | 39M | 99 languages |
 | Whisper Base | WhisperKit (CoreML) | ~150 MB | 74M | 99 languages |
 | Whisper Small | WhisperKit (CoreML) | ~500 MB | 244M | 99 languages |
@@ -65,12 +75,12 @@ Models are downloaded once from HuggingFace, then all processing works completel
 | Omnilingual 300M | sherpa-onnx | ~365 MB | 300M | 1,600+ languages |
 | Zipformer Streaming | sherpa-onnx | ~46 MB | 20M | English |
 | Parakeet TDT 0.6B | FluidAudio (CoreML) | ~600 MB | 600M | 25 European languages |
-| Apple Speech | Apple Speech (SFSpeechRecognizer) | Built-in | System | 50+ languages |
+| Apple Speech | SFSpeechRecognizer | Built-in | System | 50+ languages |
 
 ### Android (13 models)
 
 | Model | Engine | Size | Params | Languages |
-|-------|--------|------|--------|-----------|
+|---|---|---:|---:|---|
 | Whisper Tiny | whisper.cpp | ~80 MB | 39M | 99 languages |
 | Whisper Base | whisper.cpp | ~150 MB | 74M | 99 languages |
 | Whisper Base (.en) | whisper.cpp | ~150 MB | 74M | English |
@@ -82,141 +92,97 @@ Models are downloaded once from HuggingFace, then all processing works completel
 | SenseVoice Small | sherpa-onnx | ~240 MB | 234M | zh/en/ja/ko/yue |
 | Omnilingual 300M | sherpa-onnx | ~365 MB | 300M | 1,600+ languages |
 | Zipformer Streaming | sherpa-onnx | ~46 MB | 20M | English |
-| Android Speech (Offline) | Android SpeechRecognizer (on-device, API 31+) | Built-in | System | System languages |
-| Android Speech (Online) | Android SpeechRecognizer (cloud-backed) | Built-in | System | System languages |
-
-### Experimental Model Card (iOS + Android)
-
-| Model | Runtime Label | Status |
-|-------|---------------|--------|
-| TinyLlama 1.1B (ik_llama.cpp) | ik_llama.cpp (GGUF; Metal on iOS, NDK/JNI on Android) | Card only (not selectable). Runtime bridge is not integrated yet. |
+| Android Speech (Offline) | SpeechRecognizer (on-device, API 31+) | Built-in | System | System languages |
+| Android Speech (Online) | SpeechRecognizer (cloud-backed) | Built-in | System | System languages |
 
 ## Architecture
 
 ### iOS
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                   OfflineTranscriptionApp (SwiftUI)            │
-├───────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐  │
-│  │Transcription │ │ History /    │ │ ModelSetupView       │  │
-│  │View          │ │ DetailView   │ │                      │  │
-│  └──────┬───────┘ └──────┬───────┘ └──────────┬───────────┘  │
-│         │                │                     │              │
-├─────────▼────────────────▼─────────────────────▼──────────────┤
-│                    WhisperService (Orchestrator)               │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │ ASREngine: WhisperKit | SherpaOnnxOffline |              │ │
-│  │   SherpaOnnxStreaming | FluidAudio | AppleSpeech        │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│                                                                │
-│  ┌────────────────┐ ┌─────────────────┐ ┌─────────────────┐  │
-│  │ AudioRecorder  │ │ AppleTranslation│ │ NativeTTS       │  │
-│  │ (AVAudioEngine)│ │ Service (iOS18+)│ │ (AVSpeech)      │  │
-│  └────────────────┘ └─────────────────┘ └─────────────────┘  │
-│  ┌────────────────┐ ┌─────────────────┐ ┌─────────────────┐  │
-│  │ ModelDownloader│ │ SessionFile     │ │ SystemMetrics   │  │
-│  │ (URLSession)   │ │ Manager + ZIP   │ │                 │  │
-│  └────────────────┘ └─────────────────┘ └─────────────────┘  │
-│                                                                │
-├───────────────────────────────────────────────────────────────┤
-│  SwiftData: TranscriptionRecord | sessions/{uuid}/audio.wav   │
-└───────────────────────────────────────────────────────────────┘
+WhisperService (orchestrator)
+ ├── ASREngine protocol
+ │    ├── WhisperKitEngine
+ │    ├── SherpaOnnxOfflineEngine
+ │    ├── SherpaOnnxStreamingEngine
+ │    ├── FluidAudioEngine
+ │    └── AppleSpeechEngine
+ ├── AudioRecorder (AVAudioEngine)
+ ├── AppleTranslationService (iOS 18+)
+ ├── NativeTTS (AVSpeechSynthesizer)
+ ├── SessionFileManager + WAVWriter + ZIPExporter
+ └── SystemMetrics
+
+UI: SwiftUI (TranscriptionView, HistoryView, ModelSetupView)
+Persistence: SwiftData (TranscriptionRecord)
+Storage: sessions/{uuid}/audio.wav
 ```
 
 ### Android
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│              MainActivity (Compose + Navigation)               │
-├───────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐  │
-│  │Transcription │ │ History /    │ │ ModelSetupScreen     │  │
-│  │Screen        │ │ DetailScreen │ │                      │  │
-│  └──────┬───────┘ └──────┬───────┘ └──────────┬───────────┘  │
-│         │                │                     │              │
-├─────────▼────────────────▼─────────────────────▼──────────────┤
-│                    WhisperEngine (Orchestrator)                │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │ AsrEngine: SherpaOnnx | AndroidSpeechEngine             │ │
-│  │   (Offline: on-device API 31+ | Online: cloud-backed)  │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│                                                                │
-│  ┌────────────────┐ ┌─────────────────┐ ┌─────────────────┐  │
-│  │ AudioRecorder  │ │ MlKitTranslator │ │ AndroidTts      │  │
-│  │ (AudioRecord)  │ │ + AndroidSystem │ │ Service         │  │
-│  │                │ │ Translator      │ │                 │  │
-│  └────────────────┘ └─────────────────┘ └─────────────────┘  │
-│  ┌────────────────┐ ┌─────────────────┐ ┌─────────────────┐  │
-│  │ ModelDownloader│ │ AudioPlayback   │ │ SystemMetrics   │  │
-│  │ (OkHttp)      │ │ + Waveform +    │ │                 │  │
-│  │               │ │ SessionExporter │ │                 │  │
-│  └────────────────┘ └─────────────────┘ └─────────────────┘  │
-│                                                                │
-├──────────────────────────────┬────────────────────────────────┤
-│ Room DB + DataStore          │ whisper.cpp (CMake → JNI)      │
-│ TranscriptionEntity          │ libwhisper.so + WhisperLib.kt  │
-│ sessions/{uuid}/audio.wav    │                                │
-└──────────────────────────────┴────────────────────────────────┘
+WhisperEngine (orchestrator)
+ ├── AsrEngine interface
+ │    ├── WhisperCppEngine (JNI → libwhisper.so)
+ │    ├── SherpaOnnxEngine (Moonshine, SenseVoice, Omnilingual)
+ │    ├── SherpaOnnxStreamingEngine (Zipformer)
+ │    └── AndroidSpeechEngine (SpeechRecognizer)
+ ├── AudioRecorder (AudioRecord)
+ ├── MlKitTranslator / AndroidSystemTranslator
+ ├── AndroidTtsService (TextToSpeech API)
+ ├── ModelDownloader (OkHttp)
+ ├── StreamingChunkManager
+ ├── WavWriter + WaveformGenerator + AudioPlaybackManager
+ ├── SessionExporter (ZIP via FileProvider)
+ └── SystemMetrics
+
+UI: Jetpack Compose + Material3
+Persistence: Room DB + DataStore (TranscriptionEntity)
+Native: whisper.cpp (CMake → libwhisper.so + WhisperLib.kt)
+Storage: sessions/{uuid}/audio.wav
 ```
 
 ## Translation
 
-### iOS — Apple Translation Framework
-- Available on **iOS 18+**
-- Uses `TranslationSession` for on-device neural translation
-- Language packs downloaded via iOS Settings > Translate
-
-### Android — Google ML Kit Translation (default)
-- Available on **Android 5.0+ (API 21)**
-- Uses `com.google.mlkit:translate` (v17.0.3) for fully offline neural translation
-- ~30 MB per language pair, downloaded on first use
-- 50+ languages supported
-
-### Android — Android System Translation (alternative)
-- Available on **Android 12+ (API 31)** with `TranslationManager`
-- Uses system-managed language packs (downloaded via Settings > System > Languages)
-- Works fully offline once language packs are installed
-- Selectable via translation provider toggle in settings
+| | iOS | Android (default) | Android (alternative) |
+|---|---|---|---|
+| **Framework** | Apple Translation | Google ML Kit | Android System Translation |
+| **Min OS** | iOS 18+ | API 21+ | API 31+ |
+| **Languages** | System-managed | 50+ (~30 MB each) | System-managed |
+| **Download** | iOS Settings > Translate | Automatic on first use | Settings > System > Languages |
 
 ## Text-to-Speech
 
-### iOS — AVSpeechSynthesizer
-- Configurable speech rate and voice selection
-- Pauses recording during playback to prevent feedback
-
-### Android — TextToSpeech API
-- Speech rate 0.25x–2.0x, configurable locale
-- Falls back to US English if requested locale unavailable
+| | iOS | Android |
+|---|---|---|
+| **API** | AVSpeechSynthesizer | TextToSpeech |
+| **Rate** | System default | 0.25x–2.0x |
+| **Behavior** | Pauses recording during playback | Falls back to en-US if locale unavailable |
 
 ## Setup
 
 ### iOS
-**Requirements:** macOS, Xcode 15+, iOS 17+ simulator or device, XcodeGen (`brew install xcodegen`)
+
+**Requirements:** macOS, Xcode 15+, iOS 17+, XcodeGen (`brew install xcodegen`)
 
 ```bash
 ./scripts/generate-ios-project.sh
 open VoicePingIOSAndroidOfflineSpeechTranslation.xcodeproj
 ```
 
-For physical iPhone/iPad builds, add local signing overrides (kept out of git):
+For physical device builds:
 
 ```bash
 cp project.local.yml.example project.local.yml
-# Edit project.local.yml with your own:
-# - DEVELOPMENT_TEAM (10-char Apple Team ID)
-# - PRODUCT_BUNDLE_IDENTIFIER values (must be unique to your account)
+# Edit with your DEVELOPMENT_TEAM and PRODUCT_BUNDLE_IDENTIFIER
 ./scripts/generate-ios-project.sh
 ```
 
 ### Android
+
 **Requirements:** Android Studio (or SDK/NDK), JDK 17, Android SDK 35, CMake 3.22.1
 
 ```bash
-# Clone with submodules (whisper.cpp)
 git clone --recurse-submodules <repo-url>
 
 # Download sherpa-onnx AAR
@@ -230,21 +196,21 @@ cd VoicePingIOSAndroidOfflineSpeechTranslationAndroid
 ## Testing
 
 ### iOS
+
 ```bash
 # Unit tests (~110 tests, 8 suites)
 xcodebuild test -scheme OfflineTranscription \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
   -only-testing:OfflineTranscriptionTests
-```
 
-```bash
-# Physical device build (requires project.local.yml and regenerated project)
+# Physical device
 xcodebuild -scheme OfflineTranscription \
   -destination 'platform=iOS,id=<device-udid>' \
   -allowProvisioningUpdates build
 ```
 
 ### Android
+
 ```bash
 # Unit tests (146 tests, 8 classes)
 cd VoicePingIOSAndroidOfflineSpeechTranslationAndroid
@@ -252,28 +218,29 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
   ./gradlew testDebugUnitTest
 ```
 
-### E2E & User Flow Tests
+### E2E & UI Flow
+
 ```bash
-# E2E model evidence tests
-./scripts/ios-e2e-test.sh --xcuitest
-./scripts/android-e2e-test.sh
+# E2E model evidence
+scripts/ios-e2e-test.sh --xcuitest
+scripts/android-e2e-test.sh
 
 # User flow UI tests
-./scripts/ios-ui-flow-tests.sh
-./scripts/android-userflow-test.sh
+scripts/ios-ui-flow-tests.sh
+scripts/android-userflow-test.sh
 ```
 
 ## Tech Stack
 
 | | iOS | Android |
 |---|---|---|
-| Language | Swift 5.9 | Kotlin 2.1 |
-| UI | SwiftUI | Jetpack Compose + Material3 |
-| Persistence | SwiftData | Room + DataStore |
-| ASR | WhisperKit, sherpa-onnx, FluidAudio, Apple Speech | sherpa-onnx, Android SpeechRecognizer |
-| Translation | Apple Translation (iOS 18+) | Google ML Kit Translation / Android System Translation (API 31+) |
-| TTS | AVSpeechSynthesizer | TextToSpeech API |
-| Min OS | iOS 17.0 | Android 8.0 (API 26) |
+| **Language** | Swift 5.9 | Kotlin 2.1 |
+| **UI** | SwiftUI | Jetpack Compose + Material3 |
+| **Persistence** | SwiftData | Room + DataStore |
+| **ASR** | WhisperKit, sherpa-onnx, FluidAudio, Apple Speech | whisper.cpp, sherpa-onnx, Android SpeechRecognizer |
+| **Translation** | Apple Translation (iOS 18+) | ML Kit / System Translation (API 31+) |
+| **TTS** | AVSpeechSynthesizer | TextToSpeech API |
+| **Min OS** | iOS 17.0 | Android 8.0 (API 26) |
 
 ## Privacy
 
@@ -290,4 +257,3 @@ Model weights are downloaded at runtime and have their own licenses — see `NOT
 ## Creator
 
 Created by **Akinori Nakajima** ([atyenoria](https://github.com/atyenoria)).
-# voiceping-ios-android-offline-speech-translation

@@ -33,6 +33,15 @@ enum ASRModelState: String, Equatable, Sendable {
     case error
 }
 
+// MARK: - Audio Capture Mode
+
+/// Where audio input comes from for transcription.
+enum AudioCaptureMode: String, Sendable {
+    case microphone      // Default — voice recording via mic
+    case deviceAudio     // Capture speaker output via mic (measurement mode, flat response)
+    case systemBroadcast // ReplayKit Broadcast Extension (digital system audio)
+}
+
 // MARK: - ASR Engine Type
 
 /// Which runtime backend a model uses.
@@ -86,8 +95,8 @@ protocol ASREngine: AnyObject {
 
     // MARK: - Recording
 
-    /// Start live audio recording.
-    func startRecording() async throws
+    /// Start live audio recording with the specified capture mode.
+    func startRecording(captureMode: AudioCaptureMode) async throws
 
     /// Stop recording.
     func stopRecording()
@@ -122,4 +131,9 @@ enum ASRTask: Sendable {
 
 extension ASREngine {
     var loadingStatusMessage: String { "" }
+
+    // Backward compatibility: default to microphone mode
+    func startRecording() async throws {
+        try await startRecording(captureMode: .microphone)
+    }
 }

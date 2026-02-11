@@ -57,6 +57,7 @@ final class WhisperService {
 
     // Configuration
     var selectedModel: ModelInfo = ModelInfo.defaultModel
+    var audioCaptureMode: AudioCaptureMode = .microphone
     var useVAD: Bool = true
     var silenceThreshold: Float = 0.0015
     var realtimeDelayInterval: Double = 1.0
@@ -99,9 +100,31 @@ final class WhisperService {
     // Engine delegation
     private(set) var activeEngine: ASREngine?
 
+    /// System audio source for broadcast mode (receives audio from Broadcast Extension).
+    private var systemAudioSource: SystemAudioSource?
+
     /// The current session's audio samples (for saving to disk).
     var currentAudioSamples: [Float] {
-        activeEngine?.audioSamples ?? []
+        if audioCaptureMode == .systemBroadcast, let source = systemAudioSource {
+            return source.audioSamples
+        }
+        return activeEngine?.audioSamples ?? []
+    }
+
+    /// Audio samples for transcription — uses SystemAudioSource in broadcast mode.
+    private var effectiveAudioSamples: [Float] {
+        if audioCaptureMode == .systemBroadcast, let source = systemAudioSource {
+            return source.audioSamples
+        }
+        return activeEngine?.audioSamples ?? []
+    }
+
+    /// Energy levels for VAD / visualization — uses SystemAudioSource in broadcast mode.
+    private var effectiveRelativeEnergy: [Float] {
+        if audioCaptureMode == .systemBroadcast, let source = systemAudioSource {
+            return source.relativeEnergy
+        }
+        return activeEngine?.relativeEnergy ?? []
     }
 
     // Private
@@ -291,7 +314,7 @@ final class WhisperService {
                     Task {
                         do {
                             await self.drainLingeringTranscriptionTask()
-                            try await engine.startRecording()
+                            try await engine.startRecording(captureMode: self.audioCaptureMode)
                             isTranscribing = true
                             sessionState = .recording
                             realtimeLoop()
@@ -458,18 +481,26 @@ final class WhisperService {
         resetTranscriptionState()
         ttsService.stop()
 
-        do {
-            try await engine.startRecording()
-        } catch {
-            isRecording = false
-            isTranscribing = false
-            sessionState = .idle
-            if let appError = error as? AppError {
-                lastError = appError
-            } else {
-                lastError = .audioSessionSetupFailed(underlying: error)
+        if audioCaptureMode == .systemBroadcast {
+            // Use SystemAudioSource instead of engine's AudioRecorder
+            let source = SystemAudioSource()
+            systemAudioSource = source
+            source.start()
+        } else {
+            systemAudioSource = nil
+            do {
+                try await engine.startRecording(captureMode: audioCaptureMode)
+            } catch {
+                isRecording = false
+                isTranscribing = false
+                sessionState = .idle
+                if let appError = error as? AppError {
+                    lastError = appError
+                } else {
+                    lastError = .audioSessionSetupFailed(underlying: error)
+                }
+                throw error
             }
-            throw error
         }
 
         isRecording = true
@@ -487,6 +518,8 @@ final class WhisperService {
         cancelAndTrackTranscriptionTask()
         translationTask?.cancel()
         translationTask = nil
+        systemAudioSource?.stop()
+        systemAudioSource = nil
         activeEngine?.stopRecording()
         ttsService.stop()
 
@@ -721,7 +754,7 @@ final class WhisperService {
     }
 
     private func transcribeCurrentBuffer(engine: ASREngine) async throws {
-        let currentBuffer = engine.audioSamples
+        let currentBuffer = effectiveAudioSamples
         let nextBufferSize = currentBuffer.count - lastBufferSize
         let nextBufferSeconds = Float(nextBufferSize) / Self.sampleRate
         refreshRealtimeMeters(engine: engine)
@@ -732,13 +765,13 @@ final class WhisperService {
             return
         }
 
-        if useVAD {
+        if useVAD && audioCaptureMode == .microphone {
             // Bypass VAD for the first second so initial speech is never dropped
             let vadBypassSamples = Int(Self.sampleRate * Self.initialVADBypassSeconds)
             let bypassVadDuringStartup = !hasCompletedFirstInference && currentBuffer.count <= vadBypassSamples
             if !bypassVadDuringStartup {
                 let voiceDetected = isVoiceDetected(
-                    in: engine.relativeEnergy,
+                    in: effectiveRelativeEnergy,
                     nextBufferInSeconds: nextBufferSeconds
                 )
                 if !voiceDetected {
@@ -862,13 +895,13 @@ final class WhisperService {
         }
         lastUIMeterUpdateTimestamp = now
 
-        let sampleCount = engine.audioSamples.count
+        let sampleCount = effectiveAudioSamples.count
         let nextBufferSeconds = Double(sampleCount) / Double(Self.sampleRate)
         if bufferSeconds != nextBufferSeconds {
             bufferSeconds = nextBufferSeconds
         }
 
-        let nextEnergy = Array(engine.relativeEnergy.suffix(Self.displayEnergyFrameLimit))
+        let nextEnergy = Array(effectiveRelativeEnergy.suffix(Self.displayEnergyFrameLimit))
         if bufferEnergy != nextEnergy {
             bufferEnergy = nextEnergy
         }

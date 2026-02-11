@@ -25,6 +25,7 @@ fi
 ALL_MODELS=(
     "sensevoice-small"
     "parakeet-tdt-v3"
+    "apple-speech"
 )
 
 # Parse arguments
@@ -95,6 +96,7 @@ if [ "$USE_XCUITEST" = true ]; then
         zipformer-20m test_zipformer20m
         omnilingual-300m test_omnilingual300m
         parakeet-tdt-v3 test_parakeetTdtV3
+        apple-speech test_appleSpeech
     )
 
     PASS_COUNT=0
@@ -160,7 +162,7 @@ if [ "$USE_XCUITEST" = true ]; then
             echo "  NO RESULT - result.json not found"
         fi
 
-        PNG_COUNT=$(ls "$MODEL_DIR"/*.png 2>/dev/null | wc -l | tr -d ' ')
+        PNG_COUNT=$(find "$MODEL_DIR" -maxdepth 1 -name "*.png" 2>/dev/null | wc -l | tr -d ' ')
         echo "  Screenshots: $PNG_COUNT"
         echo ""
     done

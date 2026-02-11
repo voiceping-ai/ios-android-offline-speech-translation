@@ -4,14 +4,56 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Translate icon: "A" on left, Japanese character on right, with arrows -->
+    <!-- Globe outline -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.2"
+        android:pathData="M54,22 C43.5,22 35,30.5 35,41 C35,51.5 43.5,60 54,60 C64.5,60 73,51.5 73,41 C73,30.5 64.5,22 54,22 Z"/>
+    <!-- Globe horizontal line -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.2"
+        android:pathData="M35,41 L73,41"/>
+    <!-- Globe vertical meridian -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.2"
+        android:pathData="M54,22 C49,22 46,30.5 46,41 C46,51.5 49,60 54,60 C59,60 62,51.5 62,41 C62,30.5 59,22 54,22 Z"/>
+    <!-- Globe latitude lines -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M38,33 Q54,29 70,33"/>
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M38,49 Q54,53 70,49"/>
+    <!-- Left speech bubble (A) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M36.5,42 L39.5,42 L45,58 L42.2,58 L40.9,54.5 L35,54.5 L33.7,58 L31,58 L36.5,42 Z M37.9,46 L35.9,52 L39.9,52 L37.9,46 Z"/>
+        android:pathData="M40,72 C40,68.1 43.1,65 47,65 C50.9,65 54,68.1 54,72 C54,75.9 50.9,79 47,79 C45.8,79 44.7,78.7 43.7,78.1 L39,82 L40.5,77.5 C40.2,76.4 40,75.2 40,72 Z"/>
+    <!-- "A" text in left bubble -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M47,68 L44,76 L45.5,76 L46.2,74 L47.8,74 L48.5,76 L50,76 L47,68 Z M46.6,72.8 L47,71 L47.4,72.8 L46.6,72.8 Z"/>
+    <!-- Right speech bubble (文) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M56,42 L56,45 L62,45 L62,47 L60.8,47 C60.1,49.5 58.8,51.7 57,53.3 C58.3,54.2 59.8,54.8 61.5,55.1 L60.5,57.5 C58.4,57 56.5,56.1 55,54.8 C53.5,56.1 51.6,57 49.5,57.5 L48.5,55.1 C50.2,54.8 51.7,54.2 53,53.3 C51.6,51.9 50.5,50.2 49.8,48.2 L52,47.5 C52.5,49 53.3,50.3 54.4,51.4 C55.7,50.1 56.6,48.5 57,46.7 L50,46.7 L50,45 L56,45 L56,42 Z"/>
+        android:pathData="M54,72 C54,68.1 57.1,65 61,65 C64.9,65 68,68.1 68,72 C68,75.2 67.8,76.4 67.5,77.5 L69,82 L64.3,78.1 C63.3,78.7 62.2,79 61,79 C57.1,79 54,75.9 54,72 Z"/>
+    <!-- "文" text in right bubble -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M58,69 L64,69 L64,70.5 L62,70.5 C61.5,72 60.5,73.2 59.5,74 C60.5,74.5 61.5,74.8 62.5,75 L62,76.5 C60.8,76.2 59.7,75.7 58.8,75 C57.9,75.7 56.8,76.2 55.5,76.5 L55,75 C56,74.8 57,74.5 57.8,74 C57,73.3 56.3,72.3 56,71 L57.5,70.8 C57.8,71.5 58.2,72.1 58.8,72.7 C59.5,72.1 60,71.3 60.3,70.5 L58,70.5 L58,69 Z"/>
+    <!-- Bidirectional arrows -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M46,60 L50,60 L50,62 L46,62 Z M48,56 L46,60 L50,60 L48,56 Z"/>
+        android:pathData="M50,70 L58,70 L56,68 L57,67 L60,70.5 L57,74 L56,73 L58,71 L50,71 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M58,73 L50,73 L52,71 L51,70 L48,73.5 L51,77 L52,76 L50,74 L58,74 Z"/>
 </vector>

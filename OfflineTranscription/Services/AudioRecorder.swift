@@ -28,7 +28,7 @@ final class AudioRecorder {
     /// ~100 frames/sec × 600 sec = 60k frames ≈ 10 minutes of visualization data.
     private static let maxEnergyFrames = 60000
 
-    func startRecording() async throws {
+    func startRecording(captureMode: AudioCaptureMode = .microphone) async throws {
         guard !isRecording else { return }
 
         // Request microphone permission
@@ -36,13 +36,30 @@ final class AudioRecorder {
         guard granted else { throw AppError.microphonePermissionDenied }
 
         let session = AVAudioSession.sharedInstance()
-        let categoryOptions: AVAudioSession.CategoryOptions
+        switch captureMode {
+        case .microphone:
+            let categoryOptions: AVAudioSession.CategoryOptions
 #if compiler(>=6.2)
-        categoryOptions = [.defaultToSpeaker, .allowBluetoothHFP]
+            categoryOptions = [.defaultToSpeaker, .allowBluetoothHFP]
 #else
-        categoryOptions = [.defaultToSpeaker, .allowBluetooth]
+            categoryOptions = [.defaultToSpeaker, .allowBluetooth]
 #endif
-        try session.setCategory(.playAndRecord, mode: .default, options: categoryOptions)
+            try session.setCategory(.playAndRecord, mode: .default, options: categoryOptions)
+        case .deviceAudio:
+            // Measurement mode: flat frequency response, no AGC/noise suppression.
+            // Optimal for capturing speaker output through the microphone.
+            let categoryOptions: AVAudioSession.CategoryOptions
+#if compiler(>=6.2)
+            categoryOptions = [.allowBluetoothHFP]
+#else
+            categoryOptions = [.allowBluetooth]
+#endif
+            try session.setCategory(.playAndRecord, mode: .measurement, options: categoryOptions)
+        case .systemBroadcast:
+            // System broadcast audio is received via the Broadcast Extension, not the mic.
+            // This path should not be reached — handled by SystemAudioSource.
+            return
+        }
         try session.setActive(true)
 
         let engine = AVAudioEngine()

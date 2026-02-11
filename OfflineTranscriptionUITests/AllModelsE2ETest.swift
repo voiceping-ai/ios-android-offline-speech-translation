@@ -37,6 +37,7 @@ final class AllModelsE2ETest: XCTestCase {
     func test_zipformer20m() { testModel("zipformer-20m") }
     func test_omnilingual300m() { testModel("omnilingual-300m") }
     func test_parakeetTdtV3() { testModel("parakeet-tdt-v3") }
+    func test_appleSpeech() { testModel("apple-speech") }
 
     // MARK: - Core test logic
 
@@ -54,9 +55,11 @@ final class AllModelsE2ETest: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--auto-test", "--model-id", modelId]
         app.launch()
+        allowPermissionAlertsIfNeeded(app: app)
 
         // 2. Screenshot 01: model loading/downloading
         sleep(3)
+        allowPermissionAlertsIfNeeded(app: app)
         saveScreenshot(app.screenshot(), to: evidenceDir, name: "01_model_loading.png")
         addAttachment(app.screenshot(), name: "\(modelId)_01_model_loading")
 
@@ -81,6 +84,7 @@ final class AllModelsE2ETest: XCTestCase {
         var resultExists = false
 
         while Date().timeIntervalSince(startWait) < overlayTimeout {
+            allowPermissionAlertsIfNeeded(app: app)
             // Check for result.json file (fast path)
             if FileManager.default.fileExists(atPath: resultPath) {
                 resultExists = true
@@ -163,6 +167,49 @@ final class AllModelsE2ETest: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    private func allowPermissionAlertsIfNeeded(app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for _ in 0..<3 {
+            var handled = false
+            if tapAllowIfPresent(in: app) {
+                handled = true
+            } else if tapAllowIfPresent(in: springboard) {
+                handled = true
+            }
+            guard handled else { break }
+            app.tap()
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+    }
+
+    private func tapAllowIfPresent(in application: XCUIApplication) -> Bool {
+        let alert = application.alerts.firstMatch
+        guard alert.exists else { return false }
+
+        let preferredButtons = [
+            "Allow",
+            "OK",
+            "Allow While Using App",
+            "Allow Once",
+        ]
+
+        for label in preferredButtons {
+            let button = alert.buttons[label]
+            if button.exists {
+                button.tap()
+                return true
+            }
+        }
+
+        let allowPredicate = NSPredicate(format: "label CONTAINS[c] %@", "Allow")
+        let allowButton = alert.buttons.matching(allowPredicate).firstMatch
+        if allowButton.exists {
+            allowButton.tap()
+            return true
+        }
+        return false
+    }
 
     private func saveScreenshot(_ screenshot: XCUIScreenshot, to dir: String, name: String) {
         let path = "\(dir)/\(name)"

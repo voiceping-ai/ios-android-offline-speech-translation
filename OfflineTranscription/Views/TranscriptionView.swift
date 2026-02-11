@@ -96,7 +96,7 @@ struct TranscriptionView: View {
                                 if vm.showPermissionDenied {
                                     permissionDeniedView(vm: vm)
                                 } else {
-                                    Text("Tap the microphone button to start transcribing.")
+                                    Text(placeholderText)
                                         .font(.body)
                                         .foregroundStyle(.tertiary)
                                         .accessibilityIdentifier("idle_placeholder")
@@ -219,6 +219,35 @@ struct TranscriptionView: View {
                 )
                 .padding(.horizontal)
                 .padding(.top, 4)
+            }
+
+            // Audio source selector
+            if viewModel != nil, !(viewModel?.isRecording ?? false) {
+                @Bindable var service = whisperService
+                Picker("Audio Source", selection: $service.audioCaptureMode) {
+                    Label("Voice", systemImage: "mic.fill").tag(AudioCaptureMode.microphone)
+                    Label("Device", systemImage: "speaker.wave.2.fill").tag(AudioCaptureMode.deviceAudio)
+                    Label("System", systemImage: "rectangle.dashed.badge.record").tag(AudioCaptureMode.systemBroadcast)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .accessibilityIdentifier("audio_source_picker")
+            }
+
+            // System broadcast info + picker
+            if whisperService.audioCaptureMode == .systemBroadcast, !(viewModel?.isRecording ?? false) {
+                VStack(spacing: 8) {
+                    Text("Tap to start system audio capture. Works with most apps (not Safari/Music).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+
+                    BroadcastPickerView()
+                        .frame(width: 50, height: 50)
+                        .accessibilityIdentifier("broadcast_picker")
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 4)
             }
 
             // Controls
@@ -377,6 +406,17 @@ struct TranscriptionView: View {
             .buttonStyle(.borderedProminent)
         }
         .padding()
+    }
+
+    private var placeholderText: String {
+        switch whisperService.audioCaptureMode {
+        case .deviceAudio:
+            return "Play audio on your device, then tap record to transcribe it."
+        case .systemBroadcast:
+            return "Start a system broadcast above, then audio from other apps will be transcribed."
+        case .microphone:
+            return "Tap the microphone button to start transcribing."
+        }
     }
 
     private var interruptedBanner: some View {
