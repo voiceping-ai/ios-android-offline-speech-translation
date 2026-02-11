@@ -1,14 +1,22 @@
 package com.voiceping.offlinetranscription.service
 
 import android.Manifest
+import android.app.Activity
 import android.annotation.SuppressLint
-import android.content.pm.PackageManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import androidx.core.content.ContextCompat
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
+import com.voiceping.offlinetranscription.model.AudioInputMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -39,13 +47,21 @@ class AudioRecorder(private val context: Context) {
     }
 
     private data class RecorderConfig(
-        val source: RecorderSource,
+        val inputMode: AudioInputMode,
+        val source: RecorderSource?,
         val format: RecorderFormat,
-    )
+    ) {
+        val sourceLabel: String
+            get() = when (inputMode) {
+                AudioInputMode.MICROPHONE -> source?.label ?: "MIC"
+                AudioInputMode.SYSTEM_PLAYBACK -> "SYSTEM_PLAYBACK"
+            }
+    }
 
     private var audioRecord: AudioRecord? = null
     private var activeConfig: RecorderConfig? = null
     private var preferredConfig: RecorderConfig? = null
+    private var mediaProjection: MediaProjection? = null
     // Use ArrayList with initial capacity to reduce reallocation overhead
     private val audioBuffer = ArrayList<Float>(SAMPLE_RATE * 60) // Pre-allocate ~1 min
     private val energyHistory = ArrayList<Float>(500)
@@ -55,10 +71,31 @@ class AudioRecorder(private val context: Context) {
     var isRecording = false
         private set
 
+    val isSystemAudioCaptureSupported: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+
+    val hasSystemAudioCapturePermission: Boolean
+        get() = mediaProjection != null
+
     fun hasPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
             context, Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    fun setSystemAudioCapturePermission(resultCode: Int, data: Intent?): Boolean {
+        clearSystemAudioCapturePermission()
+        if (!isSystemAudioCaptureSupported) return false
+        if (resultCode != Activity.RESULT_OK || data == null) return false
+        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+            ?: return false
+        mediaProjection = manager.getMediaProjection(resultCode, data)
+        return mediaProjection != null
+    }
+
+    fun clearSystemAudioCapturePermission() {
+        mediaProjection?.stop()
+        mediaProjection = null
     }
 
     val samples: FloatArray
@@ -119,7 +156,8 @@ class AudioRecorder(private val context: Context) {
      * Pre-initialize the recorder config so first real recording starts with minimal latency.
      * Safe to call multiple times; no-op without permission or while recording.
      */
-    fun prewarm() {
+    fun prewarm(inputMode: AudioInputMode = AudioInputMode.MICROPHONE) {
+        if (inputMode != AudioInputMode.MICROPHONE) return
         if (!hasPermission() || isRecording) return
         var record: AudioRecord? = null
         try {
@@ -143,7 +181,7 @@ class AudioRecorder(private val context: Context) {
                     }
                 }
             }
-            Log.i("AudioRecorder", "Prewarmed source=${config.source.label} format=${config.format.name}")
+            Log.i("AudioRecorder", "Prewarmed source=${config.sourceLabel} format=${config.format.name}")
         } catch (e: Throwable) {
             Log.w("AudioRecorder", "Prewarm failed", e)
         } finally {
@@ -156,10 +194,13 @@ class AudioRecorder(private val context: Context) {
     }
 
     @Suppress("MissingPermission")
-    suspend fun startRecording() {
+    suspend fun startRecording(inputMode: AudioInputMode = AudioInputMode.MICROPHONE) {
         if (!hasPermission()) throw SecurityException("RECORD_AUDIO permission not granted")
 
-        val (record, config) = createAudioRecordWithFallback()
+        val (record, config) = when (inputMode) {
+            AudioInputMode.MICROPHONE -> createAudioRecordWithFallback()
+            AudioInputMode.SYSTEM_PLAYBACK -> createSystemPlaybackAudioRecord()
+        }
 
         audioRecord = record
         activeConfig = config
@@ -173,7 +214,7 @@ class AudioRecorder(private val context: Context) {
 
         Log.i(
             "AudioRecorder",
-            "Recording started source=${config.source.label} format=${config.format.name}"
+            "Recording started source=${config.sourceLabel} format=${config.format.name}"
         )
         isRecording = true
 
@@ -233,6 +274,10 @@ class AudioRecorder(private val context: Context) {
 
         // Fast path: reuse the last known working config to avoid startup probe latency.
         preferredConfig?.let { cached ->
+            if (cached.inputMode != AudioInputMode.MICROPHONE || cached.source == null) {
+                preferredConfig = null
+                return@let
+            }
             try {
                 val cachedRecord = createAudioRecord(cached.source, cached.format)
                 if (cachedRecord.state == AudioRecord.STATE_INITIALIZED) {
@@ -249,17 +294,21 @@ class AudioRecorder(private val context: Context) {
                 try {
                     val candidate = createAudioRecord(source, format)
                     if (candidate.state == AudioRecord.STATE_INITIALIZED) {
-                        val chosen = RecorderConfig(source, format)
+                        val chosen = RecorderConfig(
+                            inputMode = AudioInputMode.MICROPHONE,
+                            source = source,
+                            format = format
+                        )
                         preferredConfig = chosen
                         if (chosen.source != RecorderSource.Mic) {
-                            Log.w("AudioRecorder", "Using fallback audio source ${chosen.source.label}")
+                            Log.w("AudioRecorder", "Using fallback audio source ${chosen.sourceLabel}")
                         }
                         if (chosen.format == RecorderFormat.PcmFloat) {
                             Log.w("AudioRecorder", "Using fallback PCM_FLOAT microphone capture")
                         }
                         Log.i(
                             "AudioRecorder",
-                            "Selected audio source=${chosen.source.label} format=${chosen.format.name}"
+                            "Selected audio source=${chosen.sourceLabel} format=${chosen.format.name}"
                         )
                         return candidate to chosen
                     }
@@ -274,6 +323,56 @@ class AudioRecorder(private val context: Context) {
             "AudioRecord failed to initialize (unsupported audio config?)",
             lastError
         )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun createSystemPlaybackAudioRecord(): Pair<AudioRecord, RecorderConfig> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            throw IllegalStateException("System playback capture requires API 29+")
+        }
+        val projection = mediaProjection
+            ?: throw IllegalStateException("System playback capture permission not granted")
+
+        val minBufferSize = AudioRecord.getMinBufferSize(
+            SAMPLE_RATE,
+            CHANNEL_CONFIG,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minBufferSize <= 0) {
+            throw IllegalStateException("Invalid min buffer size for playback capture")
+        }
+        val desiredBufferSize = CHUNK_SIZE * RecorderFormat.Pcm16Bit.bytesPerSample * 4
+        val bufferSizeInBytes = maxOf(minBufferSize, desiredBufferSize)
+
+        val format = AudioFormat.Builder()
+            .setSampleRate(SAMPLE_RATE)
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .setChannelMask(CHANNEL_CONFIG)
+            .build()
+
+        val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
+            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+            .addMatchingUsage(AudioAttributes.USAGE_GAME)
+            .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+            .build()
+
+        val record = AudioRecord.Builder()
+            .setAudioFormat(format)
+            .setBufferSizeInBytes(bufferSizeInBytes)
+            .setAudioPlaybackCaptureConfig(captureConfig)
+            .build()
+
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            record.release()
+            throw IllegalStateException("AudioPlaybackCapture AudioRecord failed to initialize")
+        }
+
+        val config = RecorderConfig(
+            inputMode = AudioInputMode.SYSTEM_PLAYBACK,
+            source = null,
+            format = RecorderFormat.Pcm16Bit
+        )
+        return record to config
     }
 
     @SuppressLint("MissingPermission")

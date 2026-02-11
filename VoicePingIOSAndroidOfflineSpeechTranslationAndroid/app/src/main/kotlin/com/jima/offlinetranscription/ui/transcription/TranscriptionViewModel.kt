@@ -1,11 +1,13 @@
 package com.voiceping.offlinetranscription.ui.transcription
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.voiceping.offlinetranscription.data.AppDatabase
 import com.voiceping.offlinetranscription.data.TranscriptionEntity
+import com.voiceping.offlinetranscription.model.AudioInputMode
 import com.voiceping.offlinetranscription.model.ModelInfo
 import com.voiceping.offlinetranscription.model.TranslationProvider
 import com.voiceping.offlinetranscription.service.WhisperEngine
@@ -34,6 +36,10 @@ class TranscriptionViewModel(
     val modelState = engine.modelState
     val useVAD = engine.useVAD
     val enableTimestamps = engine.enableTimestamps
+    val audioInputMode = engine.audioInputMode
+    val systemAudioCaptureReady = engine.systemAudioCaptureReady
+    val isSystemAudioCaptureSupported: Boolean
+        get() = engine.isSystemAudioCaptureSupported
     val translationEnabled = engine.translationEnabled
     val speakTranslatedAudio = engine.speakTranslatedAudio
     val translationSourceLanguageCode = engine.translationSourceLanguageCode
@@ -94,6 +100,14 @@ class TranscriptionViewModel(
 
     fun clearTranscription() {
         engine.clearTranscription()
+    }
+
+    fun setAudioInputMode(mode: AudioInputMode) {
+        engine.setAudioInputMode(mode)
+    }
+
+    fun setSystemAudioCapturePermission(resultCode: Int, data: Intent?) {
+        engine.setSystemAudioCapturePermission(resultCode, data)
     }
 
     /** Dismiss error without clearing transcription text. */

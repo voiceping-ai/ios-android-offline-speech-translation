@@ -2,6 +2,10 @@ package com.voiceping.offlinetranscription.model
 
 sealed class AppError(val message: String) {
     class MicrophonePermissionDenied : AppError("Microphone access was denied. Please enable it in Settings.")
+    class SystemAudioCaptureUnsupported :
+        AppError("System audio capture requires Android 10 (API 29) or later.")
+    class SystemAudioCapturePermissionDenied :
+        AppError("System audio capture is not enabled. Tap 'Enable System Capture' and accept the prompt.")
     class NoMicrophoneSignal : AppError(
         "No microphone signal detected. In Android Emulator, enable host mic in Extended Controls > Microphone."
     )

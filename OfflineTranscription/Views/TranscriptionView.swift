@@ -226,7 +226,6 @@ struct TranscriptionView: View {
                 @Bindable var service = whisperService
                 Picker("Audio Source", selection: $service.audioCaptureMode) {
                     Label("Voice", systemImage: "mic.fill").tag(AudioCaptureMode.microphone)
-                    Label("Device", systemImage: "speaker.wave.2.fill").tag(AudioCaptureMode.deviceAudio)
                     Label("System", systemImage: "rectangle.dashed.badge.record").tag(AudioCaptureMode.systemBroadcast)
                 }
                 .pickerStyle(.segmented)
@@ -237,7 +236,7 @@ struct TranscriptionView: View {
             // System broadcast info + picker
             if whisperService.audioCaptureMode == .systemBroadcast, !(viewModel?.isRecording ?? false) {
                 VStack(spacing: 8) {
-                    Text("Tap to start system audio capture. Works with most apps (not Safari/Music).")
+                    Text("Tap to start system audio capture (ReplayKit). For privacy, iOS does not expose carrier phone-call audio to third-party apps.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -410,8 +409,6 @@ struct TranscriptionView: View {
 
     private var placeholderText: String {
         switch whisperService.audioCaptureMode {
-        case .deviceAudio:
-            return "Play audio on your device, then tap record to transcribe it."
         case .systemBroadcast:
             return "Start a system broadcast above, then audio from other apps will be transcribed."
         case .microphone:

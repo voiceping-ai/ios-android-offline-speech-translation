@@ -236,10 +236,13 @@ final class WhisperService {
         ttsService.onPlaybackStateChanged = { [weak self] speaking in
             guard let self else { return }
             self.isSpeakingTTS = speaking
-            guard speaking else { return }
-            if self.isRecording || self.sessionState == .recording {
-                self.ttsMicGuardViolations += 1
-                self.stopRecordingForTTSIfNeeded()
+            if speaking {
+                if self.isRecording || self.sessionState == .recording {
+                    self.ttsMicGuardViolations += 1
+                    self.stopRecordingForTTSIfNeeded()
+                }
+            } else if self.micStoppedForTTS {
+                Task { await self.resumeRecordingAfterTTS() }
             }
         }
         setupAudioObservers()
@@ -547,6 +550,42 @@ final class WhisperService {
         isTranscribing = false
         sessionState = .idle
         micStoppedForTTS = true
+    }
+
+    /// Resume recording immediately after TTS finishes, without resetting transcription state.
+    private func resumeRecordingAfterTTS() async {
+        guard micStoppedForTTS else { return }
+        micStoppedForTTS = false
+
+        guard sessionState == .idle else { return }
+        guard let engine = activeEngine, engine.modelState == .loaded else { return }
+
+        NSLog("[WhisperService] Resuming recording after TTS playback")
+
+        // Reset audio buffer tracking for fresh engine buffer
+        lastBufferSize = 0
+        consecutiveSilenceCount = 0
+        hasCompletedFirstInference = false
+
+        do {
+            if audioCaptureMode == .systemBroadcast {
+                let source = SystemAudioSource()
+                systemAudioSource = source
+                source.start()
+            } else {
+                try await engine.startRecording(captureMode: audioCaptureMode)
+            }
+        } catch {
+            NSLog("[WhisperService] Failed to resume recording after TTS: \(error)")
+            lastError = .audioSessionSetupFailed(underlying: error)
+            return
+        }
+
+        isRecording = true
+        isTranscribing = true
+        sessionState = .recording
+
+        realtimeLoop()
     }
 
     func clearTranscription() {
@@ -994,7 +1033,7 @@ final class WhisperService {
 
     /// When the ASR engine detects a language, automatically adjust translation direction.
     /// If detected == current target, swap source↔target (e.g. detected "ja" when target is "ja" → flip).
-    /// If detected is neither source nor target, set it as source.
+    /// If detected is outside the configured pair, ignore it to preserve the pair.
     private func applyDetectedLanguageToTranslation(_ lang: String) {
         guard translationEnabled else { return }
         let currentSource = translationSourceLanguageCode
@@ -1007,10 +1046,7 @@ final class WhisperService {
             resetTranslationState(stopTTS: true)
             scheduleTranslationUpdate()
         } else if lang != currentSource && lang != currentTarget {
-            NSLog("[WhisperService] Detected language '%@' — setting as translation source", lang)
-            translationSourceLanguageCode = lang
-            resetTranslationState(stopTTS: true)
-            scheduleTranslationUpdate()
+            NSLog("[WhisperService] Detected language '%@' not in pair (%@→%@) — ignoring", lang, currentSource, currentTarget)
         }
     }
 

@@ -38,7 +38,6 @@ enum ASRModelState: String, Equatable, Sendable {
 /// Where audio input comes from for transcription.
 enum AudioCaptureMode: String, Sendable {
     case microphone      // Default — voice recording via mic
-    case deviceAudio     // Capture speaker output via mic (measurement mode, flat response)
     case systemBroadcast // ReplayKit Broadcast Extension (digital system audio)
 }
 
