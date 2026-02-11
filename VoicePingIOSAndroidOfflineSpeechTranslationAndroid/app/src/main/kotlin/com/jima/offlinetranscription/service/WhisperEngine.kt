@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.voiceping.offlinetranscription.data.AppPreferences
 import com.voiceping.offlinetranscription.model.AppError
+import com.voiceping.offlinetranscription.model.EngineType
 import com.voiceping.offlinetranscription.model.ModelInfo
 import com.voiceping.offlinetranscription.model.ModelState
 import kotlinx.coroutines.*
@@ -183,7 +184,7 @@ class WhisperEngine(
 
     companion object {
         private const val MAX_BUFFER_SAMPLES = 16000 * 300 // 5 minutes
-        private const val OFFLINE_REALTIME_CHUNK_SECONDS = 3.5f
+        private const val OFFLINE_REALTIME_CHUNK_SECONDS = 5.0f
         private const val INITIAL_MIN_NEW_AUDIO_SECONDS = 0.35f
         private const val MIN_NEW_AUDIO_SECONDS = 0.7f
         private const val MIN_INFERENCE_RMS = 0.012f
@@ -285,12 +286,15 @@ class WhisperEngine(
         }
     }
 
-    /** Create the SherpaOnnx ASR engine for the given model. */
+    /** Create the ASR engine for the given model. */
     private fun createEngine(model: ModelInfo): AsrEngine {
-        return SherpaOnnxEngine(
-            modelType = model.sherpaModelType
-                ?: throw IllegalArgumentException("sherpaModelType required for SHERPA_ONNX models")
-        )
+        return when (model.engineType) {
+            EngineType.SHERPA_ONNX -> SherpaOnnxEngine(
+                modelType = model.sherpaModelType
+                    ?: throw IllegalArgumentException("sherpaModelType required for SHERPA_ONNX models")
+            )
+            EngineType.ANDROID_SPEECH -> AndroidSpeechEngine(context)
+        }
     }
 
     private fun createChunkManagerForModel(model: ModelInfo): StreamingChunkManager {
@@ -315,14 +319,15 @@ class WhisperEngine(
 
     suspend fun loadModelIfAvailable() {
         val model = _selectedModel.value
-        if (!downloader.isModelDownloaded(model)) return
+        val noDownloadNeeded = model.files.isEmpty()
+        if (!noDownloadNeeded && !downloader.isModelDownloaded(model)) return
 
         _modelState.value = ModelState.Loading
         _lastError.value = null
 
         try {
             val engine = createEngine(model)
-            val modelPath = resolveModelPath(model)
+            val modelPath = if (noDownloadNeeded) "" else resolveModelPath(model)
             val success = engine.loadModel(modelPath)
             if (!success) throw Exception("Failed to load model")
             currentEngine = engine
@@ -341,7 +346,8 @@ class WhisperEngine(
         _modelState.value = ModelState.Unloaded
     }
 
-    fun isModelDownloaded(model: ModelInfo): Boolean = downloader.isModelDownloaded(model)
+    fun isModelDownloaded(model: ModelInfo): Boolean =
+        model.files.isEmpty() || downloader.isModelDownloaded(model)
 
     fun setSelectedModel(model: ModelInfo) {
         _selectedModel.value = model
@@ -356,12 +362,19 @@ class WhisperEngine(
 
     suspend fun setupModel() = setupMutex.withLock {
         val model = _selectedModel.value
-        _modelState.value = ModelState.Downloading
-        _downloadProgress.value = 0f
         _lastError.value = null
+        val noDownloadNeeded = model.files.isEmpty()
+
+        if (noDownloadNeeded) {
+            // System-provided engine (e.g. Android SpeechRecognizer) — skip download phase
+            _downloadProgress.value = 1f
+        } else {
+            _modelState.value = ModelState.Downloading
+            _downloadProgress.value = 0f
+        }
 
         try {
-            if (!downloader.isModelDownloaded(model)) {
+            if (!noDownloadNeeded && !downloader.isModelDownloaded(model)) {
                 if (!hasValidatedInternetConnection()) {
                     Log.w("WhisperEngine", "No validated internet connection while downloading ${model.id}")
                     _modelState.value = ModelState.Unloaded
@@ -389,7 +402,7 @@ class WhisperEngine(
             _downloadProgress.value = 1f
 
             val engine = createEngine(model)
-            val modelPath = resolveModelPath(model)
+            val modelPath = if (noDownloadNeeded) "" else resolveModelPath(model)
             val success = withContext(Dispatchers.Default) {
                 engine.loadModel(modelPath)
             }
@@ -400,7 +413,9 @@ class WhisperEngine(
             prewarmedModelId = null
             _modelState.value = ModelState.Loaded
             preferences.setSelectedModelId(model.id)
-            preferences.setLastModelPath(modelPath)
+            if (modelPath.isNotEmpty()) {
+                preferences.setLastModelPath(modelPath)
+            }
             if (previousEngine != null && previousEngine !== engine) {
                 withContext(Dispatchers.Default) {
                     previousEngine.release()
@@ -559,10 +574,7 @@ class WhisperEngine(
         recordingStartElapsedMs = SystemClock.elapsedRealtime()
         hasCompletedFirstInference = false
         realtimeInferenceCount = 0
-        Log.i(
-            "WhisperEngine",
-            "realtime config: chunkSeconds=$OFFLINE_REALTIME_CHUNK_SECONDS baseGate=${MIN_NEW_AUDIO_SECONDS}s initialGate=${INITIAL_MIN_NEW_AUDIO_SECONDS}s targetDuty=$TARGET_INFERENCE_DUTY_CYCLE"
-        )
+
         val activeSessionToken = nextSessionToken()
         transcriptionJob?.cancel()
         recordingJob?.cancel()
@@ -571,28 +583,54 @@ class WhisperEngine(
         recordingJob = null
         energyJob = null
 
-        recordingJob = scope.launch(Dispatchers.IO) {
-            try {
-                if (!isSessionActive(activeSessionToken)) return@launch
-                audioRecorder.startRecording()
-            } catch (e: Throwable) {
-                if (!isSessionActive(activeSessionToken)) return@launch
-                withContext(Dispatchers.Main) {
-                    _lastError.value = AppError.TranscriptionFailed(e)
-                    transitionTo(SessionState.Error)
+        if (engine.isSelfRecording) {
+            // Self-recording engine (e.g. Android SpeechRecognizer):
+            // The engine manages its own mic — no AudioRecorder needed.
+            // SpeechRecognizer must be started on the main thread.
+            Log.i("WhisperEngine", "Starting self-recording engine (${_selectedModel.value.id})")
+            engine.startListening()
+
+            // Poll engine for results
+            transcriptionJob = scope.launch(Dispatchers.Default) {
+                selfRecordingPollLoop(engine, activeSessionToken)
+            }
+
+            // Track elapsed time (no waveform for self-recording engines)
+            energyJob = scope.launch(Dispatchers.Default) {
+                while (isSessionActive(activeSessionToken)) {
+                    _bufferSeconds.value = (SystemClock.elapsedRealtime() - recordingStartElapsedMs) / 1000.0
+                    delay(200)
                 }
             }
-        }
+        } else {
+            Log.i(
+                "WhisperEngine",
+                "realtime config: chunkSeconds=$OFFLINE_REALTIME_CHUNK_SECONDS baseGate=${MIN_NEW_AUDIO_SECONDS}s initialGate=${INITIAL_MIN_NEW_AUDIO_SECONDS}s targetDuty=$TARGET_INFERENCE_DUTY_CYCLE"
+            )
 
-        transcriptionJob = scope.launch(Dispatchers.Default) {
-            realtimeLoop(activeSessionToken)
-        }
+            recordingJob = scope.launch(Dispatchers.IO) {
+                try {
+                    if (!isSessionActive(activeSessionToken)) return@launch
+                    audioRecorder.startRecording()
+                } catch (e: Throwable) {
+                    if (!isSessionActive(activeSessionToken)) return@launch
+                    withContext(Dispatchers.Main) {
+                        _lastError.value = AppError.TranscriptionFailed(e)
+                        transitionTo(SessionState.Error)
+                    }
+                }
+            }
 
-        energyJob = scope.launch(Dispatchers.Default) {
-            while (isSessionActive(activeSessionToken)) {
-                _bufferEnergy.value = audioRecorder.relativeEnergy
-                _bufferSeconds.value = audioRecorder.bufferSeconds
-                delay(100)
+            transcriptionJob = scope.launch(Dispatchers.Default) {
+                realtimeLoop(activeSessionToken)
+            }
+
+            energyJob = scope.launch(Dispatchers.Default) {
+                while (isSessionActive(activeSessionToken)) {
+                    _bufferEnergy.value = audioRecorder.relativeEnergy
+                    _bufferSeconds.value = audioRecorder.bufferSeconds
+                    delay(100)
+                }
             }
         }
     }
@@ -600,7 +638,26 @@ class WhisperEngine(
     fun stopRecording() {
         if (_sessionState.value != SessionState.Recording) return
         transitionTo(SessionState.Stopping)
-        audioRecorder.stopRecording()
+
+        val engine = currentEngine
+        if (engine != null && engine.isSelfRecording) {
+            // Stop self-recording engine (must be on main thread — we're already there via UI)
+            engine.stopListening()
+            // Read final results from the engine
+            _confirmedText.value = engine.getConfirmedText()
+            _hypothesisText.value = ""
+            chunkManager.confirmedText = _confirmedText.value
+            Log.i("WhisperEngine", "stopRecording (self-recording): text='${_confirmedText.value.take(80)}'")
+        } else {
+            audioRecorder.stopRecording()
+            // Finalize any remaining hypothesis text as confirmed so it is
+            // included when the user saves the session.
+            chunkManager.finalizeCurrentChunk()
+            _confirmedText.value = chunkManager.confirmedText
+            _hypothesisText.value = ""
+            Log.i("WhisperEngine", "stopRecording: finalized text='${_confirmedText.value.take(80)}' audio=${audioRecorder.bufferSeconds}s")
+        }
+
         recordingJob?.cancel()
         energyJob?.cancel()
         recordingJob = null
@@ -609,20 +666,18 @@ class WhisperEngine(
         transcriptionJob?.cancel()
         transcriptionJob = null
 
-        // Finalize any remaining hypothesis text as confirmed so it is
-        // included when the user saves the session.
-        chunkManager.finalizeCurrentChunk()
-        _confirmedText.value = chunkManager.confirmedText
-        _hypothesisText.value = ""
-        Log.i("WhisperEngine", "stopRecording: finalized text='${_confirmedText.value.take(80)}' audio=${audioRecorder.bufferSeconds}s")
-
         transitionTo(SessionState.Idle)
     }
 
     private suspend fun stopRecordingAndWait() {
         if (_sessionState.value != SessionState.Recording) return
         transitionTo(SessionState.Stopping)
-        audioRecorder.stopRecording()
+        val engine = currentEngine
+        if (engine != null && engine.isSelfRecording) {
+            withContext(Dispatchers.Main) { engine.stopListening() }
+        } else {
+            audioRecorder.stopRecording()
+        }
         recordingJob?.cancelAndJoin()
         energyJob?.cancelAndJoin()
         recordingJob = null
@@ -647,7 +702,12 @@ class WhisperEngine(
     fun clearTranscription() {
         if (_sessionState.value == SessionState.Recording) {
             invalidateSession()
-            audioRecorder.stopRecording()
+            val engine = currentEngine
+            if (engine != null && engine.isSelfRecording) {
+                engine.stopListening()
+            } else {
+                audioRecorder.stopRecording()
+            }
             transcriptionJob?.cancel()
             recordingJob?.cancel()
             energyJob?.cancel()
@@ -715,6 +775,50 @@ class WhisperEngine(
             if (isSessionActive(sessionToken)) {
                 audioRecorder.stopRecording()
                 transitionTo(SessionState.Idle)
+            }
+        }
+    }
+
+    /**
+     * Polling loop for self-recording engines (e.g. Android SpeechRecognizer).
+     * The engine manages its own mic and provides results via [AsrEngine.getConfirmedText]
+     * and [AsrEngine.getHypothesisText]. We poll every 200ms to update the UI.
+     */
+    private suspend fun selfRecordingPollLoop(engine: AsrEngine, sessionToken: Long) {
+        var lastConfirmed = ""
+        var lastHypothesis = ""
+        try {
+            while (isSessionActive(sessionToken)) {
+                val confirmed = engine.getConfirmedText()
+                val hypothesis = engine.getHypothesisText()
+
+                if (confirmed != lastConfirmed || hypothesis != lastHypothesis) {
+                    _confirmedText.value = confirmed
+                    _hypothesisText.value = hypothesis
+                    chunkManager.confirmedText = confirmed
+                    lastConfirmed = confirmed
+                    lastHypothesis = hypothesis
+
+                    val lang = engine.getDetectedLanguage()
+                    if (lang != null && lang != _detectedLanguage.value) {
+                        _detectedLanguage.value = lang
+                        applyDetectedLanguageToTranslation(lang)
+                    }
+
+                    if (confirmed.isNotBlank()) {
+                        scheduleTranslationUpdate()
+                    }
+                }
+
+                delay(200)
+            }
+        } catch (e: CancellationException) {
+            // Normal cancellation on stop
+        } catch (e: Throwable) {
+            Log.e("WhisperEngine", "selfRecordingPollLoop error", e)
+            if (isSessionActive(sessionToken)) {
+                _lastError.value = AppError.TranscriptionFailed(e)
+                transitionTo(SessionState.Error)
             }
         }
     }
@@ -1010,6 +1114,14 @@ class WhisperEngine(
         if (engine == null || !engine.isLoaded) {
             Log.e("WhisperEngine", "transcribeFile: model not ready")
             _lastError.value = AppError.ModelNotReady()
+            return
+        }
+
+        if (engine.isSelfRecording) {
+            Log.w("WhisperEngine", "transcribeFile: not supported for self-recording engines (${_selectedModel.value.id})")
+            _lastError.value = AppError.TranscriptionFailed(
+                UnsupportedOperationException("File transcription is not supported for Android Speech engine. Use live recording instead.")
+            )
             return
         }
 
@@ -1503,7 +1615,12 @@ class WhisperEngine(
 
     fun destroy() {
         if (_sessionState.value == SessionState.Recording) {
-            audioRecorder.stopRecording()
+            val engine = currentEngine
+            if (engine != null && engine.isSelfRecording) {
+                engine.stopListening()
+            } else {
+                audioRecorder.stopRecording()
+            }
             transcriptionJob?.cancel()
             recordingJob?.cancel()
             energyJob?.cancel()

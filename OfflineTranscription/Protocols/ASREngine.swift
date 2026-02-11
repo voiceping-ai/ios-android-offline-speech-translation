@@ -38,16 +38,19 @@ enum ASRModelState: String, Equatable, Sendable {
 /// Which runtime backend a model uses.
 enum ASREngineType: String, Codable, Sendable {
     case sherpaOnnxOffline
+    case appleSpeech
 }
 
 // MARK: - Model Family
 
 enum ModelFamily: String, Codable, Sendable, Hashable {
     case senseVoice
+    case appleSpeech
 
     var displayName: String {
         switch self {
         case .senseVoice: "SenseVoice"
+        case .appleSpeech: "Apple Speech"
         }
     }
 }

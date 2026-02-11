@@ -135,11 +135,22 @@ class ModelDownloaderTest {
 
     @Test
     fun isModelDownloaded_worksWithRealCatalogModels() {
-        // Verify isModelDownloaded works for each real catalog model
-        ModelInfo.availableModels.forEach { model ->
+        // Verify isModelDownloaded works for each real catalog model that has files
+        ModelInfo.availableModels.filter { it.files.isNotEmpty() }.forEach { model ->
             assertFalse(
                 downloader.isModelDownloaded(model),
                 "Fresh downloader should report ${model.id} as not downloaded"
+            )
+        }
+    }
+
+    @Test
+    fun isModelDownloaded_returnsTrue_forModelsWithNoFiles() {
+        // Models with no files (e.g. Android SpeechRecognizer) are always "downloaded"
+        ModelInfo.availableModels.filter { it.files.isEmpty() }.forEach { model ->
+            assertTrue(
+                downloader.isModelDownloaded(model),
+                "Model ${model.id} with no files should always be reported as downloaded"
             )
         }
     }

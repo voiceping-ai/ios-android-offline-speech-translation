@@ -141,8 +141,8 @@ final class WhisperService {
     private static let displayEnergyFrameLimit = 160
     private static let uiMeterUpdateInterval: CFTimeInterval = 0.12
 
-    /// SenseVoice chunk duration: 3.5s for fast updates (single-segment model).
-    private static let maxChunkSeconds: Float = 3.5
+    /// SenseVoice chunk duration: 5s for natural turn-taking.
+    private static let maxChunkSeconds: Float = 5.0
 
     // MARK: - Adaptive Delay (CPU-aware, matches Android)
     /// Initial inference gate: show first words quickly (matches Android's 0.35s).
@@ -393,6 +393,10 @@ final class WhisperService {
     }
 
     func isModelDownloaded(_ model: ModelInfo) -> Bool {
+        // Built-in engines (Apple Speech) are always available — no download needed
+        if model.engineType == .appleSpeech {
+            return true
+        }
         guard let config = model.sherpaModelConfig else { return false }
         let modelDir = ModelDownloader.modelsDirectory.appendingPathComponent(config.repoName)
         let tokensPath = modelDir.appendingPathComponent(config.tokens)

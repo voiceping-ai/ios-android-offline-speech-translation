@@ -59,12 +59,29 @@ struct ModelInfo: Identifiable, Hashable {
                 senseVoiceModel: "model.int8.onnx"
             )
         ),
+
+        // MARK: - Apple Speech (built-in SFSpeechRecognizer)
+        ModelInfo(
+            id: "apple-speech",
+            displayName: "Apple Speech",
+            parameterCount: "System",
+            sizeOnDisk: "Built-in",
+            description: "Apple's native on-device speech recognition. 50+ languages, no download required.",
+            family: .appleSpeech,
+            engineType: .appleSpeech,
+            languages: "50+ languages"
+        ),
     ]
 
     static let defaultModel = availableModels.first { $0.id == "sensevoice-small" }!
 
     var inferenceMethodLabel: String {
-        return "sherpa-onnx offline (ONNX Runtime)"
+        switch engineType {
+        case .appleSpeech:
+            return "Apple Speech (SFSpeechRecognizer)"
+        case .sherpaOnnxOffline:
+            return "sherpa-onnx offline (ONNX Runtime)"
+        }
     }
 
     /// Whether this model can currently be selected on this device.
@@ -85,7 +102,7 @@ struct ModelInfo: Identifiable, Hashable {
     /// Models grouped by family for UI display.
     static var modelsByFamily: [(family: ModelFamily, models: [ModelInfo])] {
         let grouped = Dictionary(grouping: availableModels, by: \.family)
-        let order: [ModelFamily] = [.senseVoice]
+        let order: [ModelFamily] = [.senseVoice, .appleSpeech]
         return order.compactMap { family in
             guard let models = grouped[family], !models.isEmpty else { return nil }
             return (family: family, models: models)

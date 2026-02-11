@@ -1,6 +1,6 @@
 package com.voiceping.offlinetranscription.model
 
-enum class EngineType { SHERPA_ONNX }
+enum class EngineType { SHERPA_ONNX, ANDROID_SPEECH }
 enum class SherpaModelType { SENSE_VOICE }
 
 data class ModelFile(val url: String, val localName: String)
@@ -17,7 +17,10 @@ data class ModelInfo(
     val files: List<ModelFile>,
 ) {
     val inferenceMethod: String
-        get() = "sherpa-onnx offline (ONNX Runtime)"
+        get() = when (engineType) {
+            EngineType.SHERPA_ONNX -> "sherpa-onnx offline (ONNX Runtime)"
+            EngineType.ANDROID_SPEECH -> "Android SpeechRecognizer (on-device)"
+        }
 
     companion object {
         private const val SENSEVOICE_BASE_URL =
@@ -37,6 +40,16 @@ data class ModelInfo(
                     ModelFile("${SENSEVOICE_BASE_URL}model.int8.onnx", "model.int8.onnx"),
                     ModelFile("${SENSEVOICE_BASE_URL}tokens.txt", "tokens.txt"),
                 )
+            ),
+            ModelInfo(
+                id = "android-speech",
+                displayName = "Android Speech",
+                engineType = EngineType.ANDROID_SPEECH,
+                parameterCount = "System",
+                sizeOnDisk = "0 MB",
+                description = "Built-in Android speech recognition. No download required. On-device on Android 12+.",
+                languages = "System languages",
+                files = emptyList()
             ),
         )
 

@@ -28,9 +28,9 @@ class ModelDownloader(private val modelsDir: File) {
         return File(dir, model.files.first().localName).absolutePath
     }
 
-    /** Check that all files for a model are downloaded. */
+    /** Check that all files for a model are downloaded. Models with no files are always "downloaded". */
     fun isModelDownloaded(model: ModelInfo): Boolean {
-        if (model.files.isEmpty()) return false
+        if (model.files.isEmpty()) return true
         val dir = modelDir(model)
         return model.files.all { File(dir, it.localName).exists() }
     }

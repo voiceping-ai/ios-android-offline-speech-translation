@@ -4,6 +4,11 @@ import Foundation
 @MainActor
 enum EngineFactory {
     static func makeEngine(for model: ModelInfo) -> ASREngine {
-        return SherpaOnnxOfflineEngine()
+        switch model.engineType {
+        case .appleSpeech:
+            return AppleSpeechEngine()
+        case .sherpaOnnxOffline:
+            return SherpaOnnxOfflineEngine()
+        }
     }
 }

@@ -32,17 +32,39 @@ class AsrEngineTest {
     }
 
     @Test
-    fun allCurrentModels_areSherpaOfflineAndTyped() {
-        val models = ModelInfo.availableModels
-        assertTrue(models.isNotEmpty())
-        models.forEach { model ->
-            assertEquals(EngineType.SHERPA_ONNX, model.engineType, "Unexpected engine for ${model.id}")
+    fun allSherpaModels_areTypedWithTokens() {
+        val sherpaModels = ModelInfo.availableModels.filter { it.engineType == EngineType.SHERPA_ONNX }
+        assertTrue(sherpaModels.isNotEmpty())
+        sherpaModels.forEach { model ->
             assertNotNull(model.sherpaModelType, "sherpaModelType must be set for ${model.id}")
             assertTrue(
                 model.files.any { it.localName == "tokens.txt" },
                 "tokens.txt is required for ${model.id}"
             )
         }
+    }
+
+    @Test
+    fun androidSpeechModel_hasNoFilesAndCorrectEngine() {
+        val model = ModelInfo.availableModels.firstOrNull { it.engineType == EngineType.ANDROID_SPEECH }
+        assertNotNull(model)
+        assertEquals("android-speech", model.id)
+        assertTrue(model.files.isEmpty(), "Android Speech model should have no files to download")
+    }
+
+    @Test
+    fun selfRecordingDefault_isFalse() {
+        val engine = object : AsrEngine {
+            override suspend fun loadModel(modelPath: String) = false
+            override suspend fun transcribe(
+                audioSamples: FloatArray,
+                numThreads: Int,
+                language: String
+            ) = emptyList<TranscriptionSegment>()
+            override val isLoaded: Boolean get() = false
+            override fun release() {}
+        }
+        assertFalse(engine.isSelfRecording)
     }
 
     @Test
