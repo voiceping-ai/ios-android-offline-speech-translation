@@ -16,10 +16,18 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
     nonisolated(unsafe) private var totalFilesToDownload: Int = 1
 
     private static let huggingFaceOrg = "csukuangfj"
+    nonisolated(unsafe) private static let fileManager = FileManager.default
+    private static let downloadSessionConfiguration: URLSessionConfiguration = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 15 * 60
+        config.waitsForConnectivity = true
+        return config
+    }()
 
     /// Directory where model files are stored.
     static var modelsDirectory: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return appSupport.appendingPathComponent("SherpaModels", isDirectory: true)
     }
 
@@ -27,19 +35,16 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
     func isModelDownloaded(_ model: ModelInfo) -> Bool {
         guard let config = model.sherpaModelConfig else { return false }
         let modelDir = Self.modelsDirectory.appendingPathComponent(config.repoName)
-        for file in config.allFiles {
-            if !FileManager.default.fileExists(atPath: modelDir.appendingPathComponent(file).path) {
-                return false
-            }
+        return config.allFiles.allSatisfy { file in
+            Self.fileManager.fileExists(atPath: modelDir.appendingPathComponent(file).path)
         }
-        return true
     }
 
     /// Get the local directory path for a downloaded model.
     func modelDirectory(for model: ModelInfo) -> URL? {
         guard let config = model.sherpaModelConfig else { return nil }
         let dir = Self.modelsDirectory.appendingPathComponent(config.repoName)
-        guard FileManager.default.fileExists(atPath: dir.path) else { return nil }
+        guard Self.fileManager.fileExists(atPath: dir.path) else { return nil }
         return dir
     }
 
@@ -53,17 +58,19 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
         }
 
         let modelDir = Self.modelsDirectory.appendingPathComponent(config.repoName)
+        progress = 0
 
         if isModelDownloaded(model) {
+            progress = 1
             return modelDir
         }
 
         // Create model directory
-        try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
+        try Self.fileManager.createDirectory(at: modelDir, withIntermediateDirectories: true)
 
         // Determine which files still need downloading
         let filesToDownload = config.allFiles.filter { filename in
-            !FileManager.default.fileExists(atPath: modelDir.appendingPathComponent(filename).path)
+            !Self.fileManager.fileExists(atPath: modelDir.appendingPathComponent(filename).path)
         }
 
         guard !filesToDownload.isEmpty else { return modelDir }
@@ -78,8 +85,8 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
 
             let destPath = modelDir.appendingPathComponent(filename)
             // Remove partial file if it exists
-            try? FileManager.default.removeItem(at: destPath)
-            try FileManager.default.moveItem(at: tempFile, to: destPath)
+            try? Self.fileManager.removeItem(at: destPath)
+            try Self.fileManager.moveItem(at: tempFile, to: destPath)
         }
 
         guard isModelDownloaded(model) else {
@@ -89,6 +96,7 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
             ))
         }
 
+        progress = 1
         return modelDir
     }
 
@@ -96,8 +104,8 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
     func deleteModel(_ model: ModelInfo) throws {
         guard let config = model.sherpaModelConfig else { return }
         let modelDir = Self.modelsDirectory.appendingPathComponent(config.repoName)
-        if FileManager.default.fileExists(atPath: modelDir.path) {
-            try FileManager.default.removeItem(at: modelDir)
+        if Self.fileManager.fileExists(atPath: modelDir.path) {
+            try Self.fileManager.removeItem(at: modelDir)
         }
     }
 
@@ -108,11 +116,7 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
         session = nil
 
         // Resume any waiting continuation so the caller doesn't hang
-        continuationLock.lock()
-        let cont = continuation
-        continuation = nil
-        continuationLock.unlock()
-        cont?.resume(throwing: CancellationError())
+        resumeContinuation(with: .failure(CancellationError()))
     }
 
     deinit {
@@ -127,8 +131,11 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
 
     private func downloadFile(from url: URL) async throws -> URL {
         return try await withCheckedThrowingContinuation { continuation in
-            let config = URLSessionConfiguration.default
-            let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+            let session = URLSession(
+                configuration: Self.downloadSessionConfiguration,
+                delegate: self,
+                delegateQueue: nil
+            )
             self.session = session
 
             continuationLock.lock()
@@ -137,6 +144,19 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
 
             self.downloadTask = session.downloadTask(with: url)
             self.downloadTask?.resume()
+        }
+    }
+
+    private nonisolated func resumeContinuation(with result: Result<URL, Error>) {
+        continuationLock.lock()
+        let cont = continuation
+        continuation = nil
+        continuationLock.unlock()
+        switch result {
+        case .success(let url):
+            cont?.resume(returning: url)
+        case .failure(let error):
+            cont?.resume(throwing: error)
         }
     }
 }
@@ -149,21 +169,16 @@ extension ModelDownloader: URLSessionDownloadDelegate {
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        let tempDir = FileManager.default.temporaryDirectory
+        let tempDir = Self.fileManager.temporaryDirectory
         let tempFile = tempDir.appendingPathComponent(UUID().uuidString)
 
-        continuationLock.lock()
-        let cont = continuation
-        continuation = nil
-        continuationLock.unlock()
-
         do {
-            try FileManager.default.copyItem(at: location, to: tempFile)
+            try Self.fileManager.copyItem(at: location, to: tempFile)
             session.finishTasksAndInvalidate()
-            cont?.resume(returning: tempFile)
+            resumeContinuation(with: .success(tempFile))
         } catch {
             session.finishTasksAndInvalidate()
-            cont?.resume(throwing: error)
+            resumeContinuation(with: .failure(error))
         }
     }
 
@@ -190,12 +205,6 @@ extension ModelDownloader: URLSessionDownloadDelegate {
         didCompleteWithError error: Error?
     ) {
         guard let error else { return }
-
-        continuationLock.lock()
-        let cont = continuation
-        continuation = nil
-        continuationLock.unlock()
-
-        cont?.resume(throwing: error)
+        resumeContinuation(with: .failure(error))
     }
 }

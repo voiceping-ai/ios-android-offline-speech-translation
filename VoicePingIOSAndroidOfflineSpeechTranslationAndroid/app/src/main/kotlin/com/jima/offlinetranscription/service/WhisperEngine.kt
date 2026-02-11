@@ -683,30 +683,14 @@ class WhisperEngine(
 
         val engine = currentEngine
         if (engine != null && engine.isSelfRecording) {
-            // Stop self-recording engine (must be on main thread — we're already there via UI)
-            engine.stopListening()
-            // Read final results from the engine
-            _confirmedText.value = engine.getConfirmedText()
-            _hypothesisText.value = ""
-            chunkManager.confirmedText = _confirmedText.value
-            Log.i("WhisperEngine", "stopRecording (self-recording): text='${_confirmedText.value.take(80)}'")
+            finalizeSelfRecordingStop(engine)
         } else {
-            audioRecorder.stopRecording()
-            // Finalize any remaining hypothesis text as confirmed so it is
-            // included when the user saves the session.
-            chunkManager.finalizeCurrentChunk()
-            _confirmedText.value = chunkManager.confirmedText
-            _hypothesisText.value = ""
-            Log.i("WhisperEngine", "stopRecording: finalized text='${_confirmedText.value.take(80)}' audio=${audioRecorder.bufferSeconds}s")
+            finalizeBufferedRecordingStop()
         }
 
-        recordingJob?.cancel()
-        energyJob?.cancel()
-        recordingJob = null
-        energyJob = null
+        cancelRecorderAndEnergyJobs()
         invalidateSession()
-        transcriptionJob?.cancel()
-        transcriptionJob = null
+        cancelTranscriptionJob()
 
         transitionTo(SessionState.Idle)
     }
@@ -720,14 +704,54 @@ class WhisperEngine(
         } else {
             audioRecorder.stopRecording()
         }
+        cancelRecorderAndEnergyJobsAndWait()
+        invalidateSession()
+        cancelTranscriptionJobAndWait()
+        transitionTo(SessionState.Idle)
+    }
+
+    private fun finalizeSelfRecordingStop(engine: AsrEngine) {
+        // Stop self-recording engine (must be on main thread — we're already there via UI)
+        engine.stopListening()
+        // Read final results from the engine
+        _confirmedText.value = engine.getConfirmedText()
+        _hypothesisText.value = ""
+        chunkManager.confirmedText = _confirmedText.value
+        Log.i("WhisperEngine", "stopRecording (self-recording): text='${_confirmedText.value.take(80)}'")
+    }
+
+    private fun finalizeBufferedRecordingStop() {
+        audioRecorder.stopRecording()
+        // Finalize any remaining hypothesis text as confirmed so it is
+        // included when the user saves the session.
+        chunkManager.finalizeCurrentChunk()
+        _confirmedText.value = chunkManager.confirmedText
+        _hypothesisText.value = ""
+        Log.i("WhisperEngine", "stopRecording: finalized text='${_confirmedText.value.take(80)}' audio=${audioRecorder.bufferSeconds}s")
+    }
+
+    private fun cancelRecorderAndEnergyJobs() {
+        recordingJob?.cancel()
+        energyJob?.cancel()
+        recordingJob = null
+        energyJob = null
+    }
+
+    private suspend fun cancelRecorderAndEnergyJobsAndWait() {
         recordingJob?.cancelAndJoin()
         energyJob?.cancelAndJoin()
         recordingJob = null
         energyJob = null
-        invalidateSession()
+    }
+
+    private fun cancelTranscriptionJob() {
+        transcriptionJob?.cancel()
+        transcriptionJob = null
+    }
+
+    private suspend fun cancelTranscriptionJobAndWait() {
         transcriptionJob?.cancelAndJoin()
         transcriptionJob = null
-        transitionTo(SessionState.Idle)
     }
 
     fun setLastError(error: AppError) {

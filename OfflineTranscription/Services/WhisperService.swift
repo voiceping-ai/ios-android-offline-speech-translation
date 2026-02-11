@@ -146,6 +146,15 @@ final class WhisperService {
     private static let sampleRate: Float = 16000
     private static let displayEnergyFrameLimit = 160
     private static let uiMeterUpdateInterval: CFTimeInterval = 0.12
+    private static let e2eTimestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let inlineWhitespaceRegex: NSRegularExpression = {
+        // Collapse horizontal whitespace while preserving line breaks.
+        return try! NSRegularExpression(pattern: "[^\\S\\n]+")
+    }()
 
     /// SenseVoice chunk duration: 5s for natural turn-taking.
     private static let maxChunkSeconds: Float = 5.0
@@ -631,7 +640,7 @@ final class WhisperService {
             "mic_stopped_for_tts": micStoppedForTTS,
             "pass": pass,
             "duration_ms": durationMs,
-            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "timestamp": Self.e2eTimestampFormatter.string(from: Date()),
             "error": error
         ]
 
@@ -926,8 +935,8 @@ final class WhisperService {
     }
 
     private func normalizedJoinedText(from segments: [ASRSegment]) -> String {
-        segments
-            .map { normalizedSegmentText($0.text) }
+        segments.lazy
+            .map { self.normalizedSegmentText($0.text) }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
     }
@@ -941,7 +950,7 @@ final class WhisperService {
         text
             .components(separatedBy: "\n")
             .map { line in
-                line.replacingOccurrences(of: "[^\\S\\n]+", with: " ", options: .regularExpression)
+                collapseInlineWhitespace(in: line)
                     .trimmingCharacters(in: .whitespaces)
             }
             .joined(separator: "\n")
@@ -1053,18 +1062,22 @@ final class WhisperService {
         // Keep translation/TTS flows testable by using source text fallback inline.
         let simulatorConfirmed = normalizeDisplayText(confirmedSnapshot)
         let simulatorHypothesis = normalizeDisplayText(hypothesisSnapshot)
-        translatedConfirmedText = simulatorConfirmed
-        translatedHypothesisText = simulatorHypothesis
-        translationWarning = sourceCode.caseInsensitiveCompare(targetCode) == .orderedSame
-            ? nil
-            : "On-device Translation API is unavailable on iOS Simulator. Using source text fallback."
+        applyTranslationFallback(
+            confirmed: simulatorConfirmed,
+            hypothesis: simulatorHypothesis,
+            warning: sourceCode.caseInsensitiveCompare(targetCode) == .orderedSame
+                ? nil
+                : "On-device Translation API is unavailable on iOS Simulator. Using source text fallback."
+        )
         lastTranslationInput = (confirmedSnapshot, hypothesisSnapshot)
         speakTranslatedDeltaIfNeeded(from: simulatorConfirmed)
         #else
         if sourceCode.caseInsensitiveCompare(targetCode) == .orderedSame {
-            translatedConfirmedText = normalizeDisplayText(confirmedSnapshot)
-            translatedHypothesisText = normalizeDisplayText(hypothesisSnapshot)
-            translationWarning = nil
+            applyTranslationFallback(
+                confirmed: normalizeDisplayText(confirmedSnapshot),
+                hypothesis: normalizeDisplayText(hypothesisSnapshot),
+                warning: nil
+            )
             lastTranslationInput = (confirmedSnapshot, hypothesisSnapshot)
             speakTranslatedDeltaIfNeeded(from: translatedConfirmedText)
             return
@@ -1098,15 +1111,21 @@ final class WhisperService {
             } catch let appError as AppError {
                 guard !Task.isCancelled else { return }
                 NSLog("[WhisperService] Translation failed (AppError): %@", appError.localizedDescription)
-                self.translatedConfirmedText = self.normalizeDisplayText(confirmedSnapshot)
-                self.translatedHypothesisText = self.normalizeDisplayText(hypothesisSnapshot)
                 warningMessage = appError.localizedDescription
+                self.applyTranslationFallback(
+                    confirmed: self.normalizeDisplayText(confirmedSnapshot),
+                    hypothesis: self.normalizeDisplayText(hypothesisSnapshot),
+                    warning: warningMessage
+                )
             } catch {
                 guard !Task.isCancelled else { return }
                 NSLog("[WhisperService] Translation failed: %@", error.localizedDescription)
-                self.translatedConfirmedText = self.normalizeDisplayText(confirmedSnapshot)
-                self.translatedHypothesisText = self.normalizeDisplayText(hypothesisSnapshot)
                 warningMessage = AppError.translationFailed(underlying: error).localizedDescription
+                self.applyTranslationFallback(
+                    confirmed: self.normalizeDisplayText(confirmedSnapshot),
+                    hypothesis: self.normalizeDisplayText(hypothesisSnapshot),
+                    warning: warningMessage
+                )
             }
 
             self.translationWarning = warningMessage
@@ -1114,6 +1133,22 @@ final class WhisperService {
             self.speakTranslatedDeltaIfNeeded(from: self.translatedConfirmedText)
         }
         #endif
+    }
+
+    private func collapseInlineWhitespace(in line: String) -> String {
+        let range = NSRange(line.startIndex..<line.endIndex, in: line)
+        return Self.inlineWhitespaceRegex.stringByReplacingMatches(
+            in: line,
+            options: [],
+            range: range,
+            withTemplate: " "
+        )
+    }
+
+    private func applyTranslationFallback(confirmed: String, hypothesis: String, warning: String?) {
+        translatedConfirmedText = confirmed
+        translatedHypothesisText = hypothesis
+        translationWarning = warning
     }
 
     private func speakTranslatedDeltaIfNeeded(from translatedConfirmed: String) {

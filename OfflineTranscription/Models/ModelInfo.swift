@@ -74,6 +74,14 @@ struct ModelInfo: Identifiable, Hashable {
     ]
 
     static let defaultModel = availableModels.first { $0.id == "sensevoice-small" }!
+    private static let familyDisplayOrder: [ModelFamily] = [.senseVoice, .appleSpeech]
+    private static let cachedModelsByFamily: [(family: ModelFamily, models: [ModelInfo])] = {
+        let grouped = Dictionary(grouping: availableModels, by: \.family)
+        return familyDisplayOrder.compactMap { family in
+            guard let models = grouped[family], !models.isEmpty else { return nil }
+            return (family: family, models: models)
+        }
+    }()
 
     var inferenceMethodLabel: String {
         switch engineType {
@@ -101,12 +109,7 @@ struct ModelInfo: Identifiable, Hashable {
 
     /// Models grouped by family for UI display.
     static var modelsByFamily: [(family: ModelFamily, models: [ModelInfo])] {
-        let grouped = Dictionary(grouping: availableModels, by: \.family)
-        let order: [ModelFamily] = [.senseVoice, .appleSpeech]
-        return order.compactMap { family in
-            guard let models = grouped[family], !models.isEmpty else { return nil }
-            return (family: family, models: models)
-        }
+        cachedModelsByFamily
     }
 }
 

@@ -12,6 +12,7 @@ import com.voiceping.offlinetranscription.service.WhisperEngine
 import com.voiceping.offlinetranscription.util.WavWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -53,6 +54,23 @@ class TranscriptionViewModel(
     val fullText: String
         get() = engine.fullTranscriptionText
 
+    private inline fun launchEngineAction(crossinline block: suspend () -> Unit): Job {
+        return viewModelScope.launch {
+            block()
+        }
+    }
+
+    private fun copyAssetIfMissing(context: Context, assetName: String): File {
+        val cached = File(context.cacheDir, assetName)
+        if (cached.exists()) return cached
+        context.assets.open(assetName).use { input ->
+            cached.outputStream().use { output -> input.copyTo(output) }
+        }
+        return cached
+    }
+
+    private fun sessionDirFor(sessionId: String): File = File(filesDir, "sessions/$sessionId")
+
     fun toggleRecording() {
         if (engine.isRecording.value) {
             engine.stopRecording()
@@ -62,14 +80,14 @@ class TranscriptionViewModel(
     }
 
     fun startRecordingWithPreparation() {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.prewarmRealtimePath()
             engine.startRecording()
         }
     }
 
     fun prewarmOnScreenOpen() {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.prewarmRealtimePath()
         }
     }
@@ -112,7 +130,7 @@ class TranscriptionViewModel(
                     Log.w("TranscriptionVM", "Audio buffer was trimmed during long recording — saved WAV will be incomplete")
                 }
                 try {
-                    val sessionDir = File(filesDir, "sessions/${entity.id}")
+                    val sessionDir = sessionDirFor(entity.id)
                     val wavFile = File(sessionDir, "audio.wav")
                     withContext(Dispatchers.IO) {
                         WavWriter.write(samples, outputFile = wavFile)
@@ -136,7 +154,7 @@ class TranscriptionViewModel(
                 Log.e("TranscriptionVM", "Failed to save session to database", e)
                 // Clean up audio file on DB failure
                 if (audioRelPath != null) {
-                    File(filesDir, "sessions/${entity.id}").deleteRecursively()
+                    sessionDirFor(entity.id).deleteRecursively()
                 }
                 engine.setLastError(
                     com.voiceping.offlinetranscription.model.AppError.TranscriptionFailed(e)
@@ -154,12 +172,7 @@ class TranscriptionViewModel(
     }
 
     fun transcribeTestAsset(context: Context) {
-        val cached = File(context.cacheDir, "test_speech.wav")
-        if (!cached.exists()) {
-            context.assets.open("test_speech.wav").use { input ->
-                cached.outputStream().use { output -> input.copyTo(output) }
-            }
-        }
+        val cached = copyAssetIfMissing(context, "test_speech.wav")
         engine.transcribeFile(cached.absolutePath)
     }
 
@@ -170,55 +183,55 @@ class TranscriptionViewModel(
     }
 
     fun switchModel(model: ModelInfo) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.switchModel(model)
         }
     }
 
     fun setUseVAD(enabled: Boolean) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setUseVAD(enabled)
         }
     }
 
     fun setEnableTimestamps(enabled: Boolean) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setEnableTimestamps(enabled)
         }
     }
 
     fun setTranslationEnabled(enabled: Boolean) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setTranslationEnabled(enabled)
         }
     }
 
     fun setSpeakTranslatedAudio(enabled: Boolean) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setSpeakTranslatedAudio(enabled)
         }
     }
 
     fun setTranslationSourceLanguageCode(languageCode: String) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setTranslationSourceLanguageCode(languageCode)
         }
     }
 
     fun setTranslationTargetLanguageCode(languageCode: String) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setTranslationTargetLanguageCode(languageCode)
         }
     }
 
     fun setTtsRate(rate: Float) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setTtsRate(rate)
         }
     }
 
     fun setTranslationProvider(provider: TranslationProvider) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setTranslationProvider(provider)
         }
     }

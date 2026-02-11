@@ -5,6 +5,13 @@ import Darwin
 /// - CPU%: sum of all thread cpu_usage via task_threads / thread_basic_info
 /// - Memory: physical footprint via task_info (same metric as Xcode Instruments)
 final class SystemMetrics: Sendable {
+    private static let bytesPerMB = 1024.0 * 1024.0
+    private static let threadInfoCount = mach_msg_type_number_t(
+        MemoryLayout<thread_basic_info_data_t>.size / MemoryLayout<integer_t>.size
+    )
+    private static let taskVmInfoCount = mach_msg_type_number_t(
+        MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size
+    )
 
     /// Process CPU usage as 0-100+ (can exceed 100 on multi-core).
     func cpuPercent() -> Double {
@@ -21,7 +28,7 @@ final class SystemMetrics: Sendable {
         var totalUsage: Double = 0
         for i in 0..<Int(threadCount) {
             var info = thread_basic_info_data_t()
-            var infoCount = mach_msg_type_number_t(MemoryLayout<thread_basic_info_data_t>.size / MemoryLayout<integer_t>.size)
+            var infoCount = Self.threadInfoCount
             let kr = withUnsafeMutablePointer(to: &info) { ptr in
                 ptr.withMemoryRebound(to: integer_t.self, capacity: Int(infoCount)) { raw in
                     thread_info(threads[i], thread_flavor_t(THREAD_BASIC_INFO), raw, &infoCount)
@@ -37,13 +44,13 @@ final class SystemMetrics: Sendable {
     /// Process physical memory footprint in MB.
     func memoryMB() -> Double {
         var info = task_vm_info_data_t()
-        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        var count = Self.taskVmInfoCount
         let result = withUnsafeMutablePointer(to: &info) { ptr in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { raw in
                 task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), raw, &count)
             }
         }
         guard result == KERN_SUCCESS else { return 0 }
-        return Double(info.phys_footprint) / (1024.0 * 1024.0)
+        return Double(info.phys_footprint) / Self.bytesPerMB
     }
 }

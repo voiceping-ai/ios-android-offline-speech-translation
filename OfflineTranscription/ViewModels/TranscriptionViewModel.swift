@@ -40,6 +40,28 @@ final class TranscriptionViewModel {
         self.whisperService = whisperService
     }
 
+    private func presentError(_ error: Error) {
+        showError = true
+        if let appError = error as? AppError {
+            if case .microphonePermissionDenied = appError {
+                showPermissionDenied = true
+            }
+            errorMessage = appError.localizedDescription
+            return
+        }
+        errorMessage = error.localizedDescription
+    }
+
+    private func shouldSilentlyIgnore(_ error: AppError) -> Bool {
+        if case .translationUnavailable = error {
+            return true
+        }
+        if case .translationFailed = error {
+            return true
+        }
+        return false
+    }
+
     func toggleRecording() async {
         if isRecording || isInterrupted {
             stopRecording()
@@ -54,15 +76,8 @@ final class TranscriptionViewModel {
             recordingDuration = 0
             showPermissionDenied = false
             try await whisperService.startRecording()
-        } catch let error as AppError {
-            if case .microphonePermissionDenied = error {
-                showPermissionDenied = true
-            }
-            showError = true
-            errorMessage = error.localizedDescription
         } catch {
-            showError = true
-            errorMessage = error.localizedDescription
+            presentError(error)
         }
     }
 
@@ -78,16 +93,11 @@ final class TranscriptionViewModel {
     /// Surface any engine error via the shared error alert.
     func surfaceEngineError() {
         if let error = whisperService.lastError {
-            if case .translationUnavailable = error {
+            if shouldSilentlyIgnore(error) {
                 whisperService.clearLastError()
                 return
             }
-            if case .translationFailed = error {
-                whisperService.clearLastError()
-                return
-            }
-            showError = true
-            errorMessage = error.localizedDescription
+            presentError(error)
             whisperService.clearLastError()
         }
     }
