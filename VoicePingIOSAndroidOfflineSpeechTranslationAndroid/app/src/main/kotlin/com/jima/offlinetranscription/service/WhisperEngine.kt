@@ -841,9 +841,9 @@ class WhisperEngine(
         lastBufferSize = 0
         hasCompletedFirstInference = false
         realtimeInferenceCount = 0
-        // Clear translation cache so new speech after TTS triggers fresh translation
-        lastTranslationInput = null
-        lastSpokenTranslatedConfirmed = ""
+        // Preserve lastTranslationInput and lastSpokenTranslatedConfirmed so TTS
+        // delta computation only speaks NEW text after resume (matches iOS behavior).
+        // Language swaps already clear these via resetTranslationState().
 
         // Ensure foreground service is running for system audio capture
         if (_audioInputMode.value == AudioInputMode.SYSTEM_PLAYBACK) {
@@ -1149,8 +1149,8 @@ class WhisperEngine(
             return
         }
 
-        // VAD check
-        if (_useVAD.value) {
+        // VAD check — bypass for system playback (continuous audio, not voice-triggered)
+        if (_useVAD.value && _audioInputMode.value != AudioInputMode.SYSTEM_PLAYBACK) {
             val vadBypassSamples = (AudioRecorder.SAMPLE_RATE * INITIAL_VAD_BYPASS_SECONDS).toInt()
             val bypassVadDuringStartup = initialPhase && currentBufferSize <= vadBypassSamples
             if (!bypassVadDuringStartup) {
@@ -1695,7 +1695,12 @@ class WhisperEngine(
     }
 
     private fun scheduleTranslationUpdate() {
-        translationJob?.cancel()
+        // Don't cancel an in-flight TTS cycle — the translation job may be executing
+        // enforceMicStoppedForTts() or ttsService.speak(). Interrupting it would break
+        // the interpretation loop (mic-stop → TTS → resume-mic).
+        if (!micStoppedForTts) {
+            translationJob?.cancel()
+        }
 
         if (!_translationEnabled.value) {
             resetTranslationState(stopTts = false)
