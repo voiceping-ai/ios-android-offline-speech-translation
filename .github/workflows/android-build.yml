@@ -35,9 +35,29 @@ jobs:
           chmod +x ./scripts/ci-android-unit-test.sh
           ./scripts/ci-android-unit-test.sh
 
+      - name: Build Android release binaries
+        working-directory: VoicePingIOSAndroidOfflineSpeechTranslationAndroid
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon assembleRelease bundleRelease
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk
           path: VoicePingIOSAndroidOfflineSpeechTranslationAndroid/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: VoicePingIOSAndroidOfflineSpeechTranslationAndroid/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload release AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-aab
+          path: VoicePingIOSAndroidOfflineSpeechTranslationAndroid/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
