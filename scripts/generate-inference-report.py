@@ -5,6 +5,7 @@ Build cross-platform inference throughput report from E2E result.json files.
 Outputs:
   - artifacts/benchmarks/ios_tokens_per_second.svg
   - artifacts/benchmarks/android_tokens_per_second.svg
+  - artifacts/benchmarks/macos_tokens_per_second.svg
   - artifacts/benchmarks/inference_results.json
   - artifacts/benchmarks/inference_report.md
 
@@ -24,6 +25,7 @@ from typing import Any
 
 
 IOS_MODELS = [
+    "sensevoice-small",
     "whisper-tiny",
     "whisper-base",
     "whisper-small",
@@ -31,30 +33,40 @@ IOS_MODELS = [
     "whisper-large-v3-turbo-compressed",
     "moonshine-tiny",
     "moonshine-base",
-    "sensevoice-small",
     "zipformer-20m",
     "omnilingual-300m",
     "parakeet-tdt-v3",
+    "qwen3-asr-0.6b",
+    "qwen3-asr-0.6b-onnx",
+    "apple-speech",
 ]
 
 ANDROID_MODELS = [
+    "sensevoice-small",
     "whisper-tiny",
     "whisper-base",
     "whisper-base-en",
     "whisper-small",
     "whisper-large-v3-turbo",
-    "whisper-large-v3-turbo-compressed",
     "moonshine-tiny",
     "moonshine-base",
-    "sensevoice-small",
     "omnilingual-300m",
     "zipformer-20m",
+    "cactus-whisper-tiny",
+    "cactus-moonshine-base",
+    "qwen3-asr-0.6b",
+    "qwen3-asr-0.6b-onnx",
+    "android-speech-offline",
+    "android-speech-online",
 ]
+
+MACOS_MODELS = IOS_MODELS
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ios-dir", default="artifacts/e2e/ios")
+    parser.add_argument("--macos-dir", default="artifacts/e2e/macos")
     parser.add_argument("--android-dir", default="artifacts/e2e/android")
     parser.add_argument("--audio", default="artifacts/benchmarks/long_en_eval.wav")
     parser.add_argument("--out-dir", default="artifacts/benchmarks")
@@ -91,6 +103,7 @@ def _entry_from_payload(
             "model_id": model_id,
             "engine": "",
             "pass": False,
+            "skipped": False,
             "error": "missing result.json",
             "transcript": "",
             "word_count": 0,
@@ -104,13 +117,24 @@ def _entry_from_payload(
     duration_ms = float(payload.get("duration_ms", 0.0) or 0.0)
     duration_sec = duration_ms / 1000.0 if duration_ms > 0 else 0.0
     words = count_words(transcript)
-    tps = (words / duration_sec) if duration_sec > 0 else 0.0
+    # Prefer app-recorded tokens/sec when available; fall back to recomputing from transcript.
+    payload_tps = payload.get("tokens_per_second")
+    try:
+        payload_tps_f = float(payload_tps) if payload_tps is not None else None
+    except Exception:
+        payload_tps_f = None
+    tps = (
+        payload_tps_f
+        if (payload_tps_f is not None and payload_tps_f > 0)
+        else ((words / duration_sec) if duration_sec > 0 else 0.0)
+    )
     rtf = (audio_duration / duration_sec) if (audio_duration and duration_sec > 0) else None
 
     return {
         "model_id": str(payload.get("model_id", model_id) or model_id),
         "engine": str(payload.get("engine", "") or ""),
         "pass": bool(payload.get("pass", False)),
+        "skipped": bool(payload.get("skipped", False)),
         "error": payload.get("error"),
         "transcript": transcript,
         "word_count": words,
@@ -149,7 +173,7 @@ def fmt_float(value: float | None, digits: int = 2) -> str:
 
 
 def write_svg_chart(path: Path, title: str, entries: list[dict[str, Any]]) -> None:
-    measured = [e for e in entries if e["duration_sec"] > 0 and e["tokens_per_second"] > 0]
+    measured = [e for e in entries if not e.get("skipped") and e["duration_sec"] > 0 and e["tokens_per_second"] > 0]
     measured.sort(key=lambda e: e["tokens_per_second"], reverse=True)
 
     width = 1280
@@ -216,16 +240,36 @@ def write_svg_chart(path: Path, title: str, entries: list[dict[str, Any]]) -> No
 
 
 def platform_table_md(title: str, entries: list[dict[str, Any]]) -> str:
-    lines = [f"#### {title}", "", "| Model | Engine | Words | Duration (s) | Tok/s | RTF | Pass |", "|---|---|---:|---:|---:|---:|---|"]
-    for e in entries:
-        pass_label = "PASS" if e["pass"] else "FAIL"
-        if e["duration_sec"] <= 0:
-            lines.append(f"| `{e['model_id']}` | {e['engine'] or '-'} | 0 | n/a | n/a | n/a | {pass_label} |")
+    def sort_key(e: dict[str, Any]) -> tuple[int, float, str]:
+        skipped = bool(e.get("skipped"))
+        measured = (not skipped) and e.get("duration_ms", 0) > 0 and e.get("tokens_per_second", 0) > 0
+        if measured:
+            return (0, -float(e.get("tokens_per_second", 0.0) or 0.0), str(e.get("model_id", "")))
+        if skipped:
+            return (2, 0.0, str(e.get("model_id", "")))
+        if e.get("duration_ms", 0) > 0:
+            return (1, 0.0, str(e.get("model_id", "")))
+        return (3, 0.0, str(e.get("model_id", "")))
+
+    sorted_entries = sorted(entries, key=sort_key)
+
+    lines = [
+        f"#### {title}",
+        "",
+        "| Model | Engine | Words | Inference (ms) | Tok/s | RTF | Result |",
+        "|---|---|---:|---:|---:|---:|---|",
+    ]
+    for e in sorted_entries:
+        status = "SKIP" if e.get("skipped") else ("PASS" if e["pass"] else "FAIL")
+        if e["duration_ms"] <= 0:
+            lines.append(
+                f"| `{e['model_id']}` | {e['engine'] or '-'} | {e['word_count']} | n/a | n/a | n/a | {status} |"
+            )
             continue
         lines.append(
             f"| `{e['model_id']}` | {e['engine'] or '-'} | {e['word_count']} | "
-            f"{fmt_float(e['duration_sec'], 2)} | {fmt_float(e['tokens_per_second'], 2)} | "
-            f"{fmt_float(e['realtime_factor'], 2)} | {pass_label} |"
+            f"{e['duration_ms']:.0f} | {fmt_float(e['tokens_per_second'], 2)} | "
+            f"{fmt_float(e['realtime_factor'], 2)} | {status} |"
         )
     lines.append("")
     return "\n".join(lines)
@@ -236,6 +280,7 @@ def build_report_markdown(
     audio_duration: float | None,
     out_dir: Path,
     ios_entries: list[dict[str, Any]],
+    macos_entries: list[dict[str, Any]],
     android_entries: list[dict[str, Any]],
 ) -> str:
     audio_line = (
@@ -254,8 +299,8 @@ def build_report_markdown(
         "",
         "- Per-model E2E runs with the same English fixture on each platform.",
         "- `duration_sec = duration_ms / 1000` from each model `result.json`.",
-        "- `token_count` is computed from transcript words: `[A-Za-z0-9']+`.",
-        "- `tok/s = token_count / duration_sec`.",
+        "- `Words` is computed from transcript words: `[A-Za-z0-9']+`.",
+        "- `tok/s` uses `tokens_per_second` from `result.json` when present; otherwise `Words / duration_sec`.",
         "- `RTF = audio_duration_sec / duration_sec`.",
         "",
         "#### iOS Graph",
@@ -263,6 +308,11 @@ def build_report_markdown(
         f"![iOS tokens/sec]({(out_dir / 'ios_tokens_per_second.svg').as_posix()})",
         "",
         platform_table_md("iOS Results", ios_entries),
+        "#### macOS Graph",
+        "",
+        f"![macOS tokens/sec]({(out_dir / 'macos_tokens_per_second.svg').as_posix()})",
+        "",
+        platform_table_md("macOS Results", macos_entries),
         "#### Android Graph",
         "",
         f"![Android tokens/sec]({(out_dir / 'android_tokens_per_second.svg').as_posix()})",
@@ -270,11 +320,12 @@ def build_report_markdown(
         platform_table_md("Android Results", android_entries),
         "#### Reproduce",
         "",
-        "1. `rm -rf artifacts/e2e/ios/* artifacts/e2e/android/*`",
+        "1. `rm -rf artifacts/e2e/ios/* artifacts/e2e/macos/* artifacts/e2e/android/*`",
         "2. `TARGET_SECONDS=30 scripts/prepare-long-eval-audio.sh`",
         "3. `EVAL_WAV_PATH=artifacts/benchmarks/long_en_eval.wav scripts/ios-e2e-test.sh`",
-        "4. `INSTRUMENT_TIMEOUT_SEC=300 EVAL_WAV_PATH=artifacts/benchmarks/long_en_eval.wav scripts/android-e2e-test.sh`",
-        "5. `python3 scripts/generate-inference-report.py --audio artifacts/benchmarks/long_en_eval.wav --update-readme`",
+        "4. (Optional) `EVAL_WAV_PATH=artifacts/benchmarks/long_en_eval.wav scripts/macos-e2e-test.sh`",
+        "5. `INSTRUMENT_TIMEOUT_SEC=300 EVAL_WAV_PATH=artifacts/benchmarks/long_en_eval.wav scripts/android-e2e-test.sh`",
+        "6. `python3 scripts/generate-inference-report.py --audio artifacts/benchmarks/long_en_eval.wav --update-readme`",
         "",
         "One-command runner: `TARGET_SECONDS=30 scripts/run-inference-benchmarks.sh`",
         "",
@@ -304,6 +355,7 @@ def main() -> None:
     args = parse_args()
 
     ios_dir = Path(args.ios_dir)
+    macos_dir = Path(args.macos_dir)
     android_dir = Path(args.android_dir)
     out_dir = Path(args.out_dir)
     audio_path = Path(args.audio)
@@ -313,9 +365,11 @@ def main() -> None:
     audio_duration = audio_duration_seconds(audio_path)
 
     ios_entries = collect_platform_results(ios_dir, IOS_MODELS, audio_duration)
+    macos_entries = collect_platform_results(macos_dir, MACOS_MODELS, audio_duration)
     android_entries = collect_platform_results(android_dir, ANDROID_MODELS, audio_duration)
 
     write_svg_chart(out_dir / "ios_tokens_per_second.svg", "iOS Inference Throughput (tokens/sec)", ios_entries)
+    write_svg_chart(out_dir / "macos_tokens_per_second.svg", "macOS Inference Throughput (tokens/sec)", macos_entries)
     write_svg_chart(
         out_dir / "android_tokens_per_second.svg",
         "Android Inference Throughput (tokens/sec)",
@@ -326,6 +380,7 @@ def main() -> None:
         "audio_fixture": str(audio_path),
         "audio_duration_sec": audio_duration,
         "ios": ios_entries,
+        "macos": macos_entries,
         "android": android_entries,
     }
     (out_dir / "inference_results.json").write_text(
@@ -333,13 +388,14 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    report_md = build_report_markdown(audio_path, audio_duration, out_dir, ios_entries, android_entries)
+    report_md = build_report_markdown(audio_path, audio_duration, out_dir, ios_entries, macos_entries, android_entries)
     (out_dir / "inference_report.md").write_text(report_md, encoding="utf-8")
 
     if args.update_readme:
         update_readme_section(readme_path, report_md)
 
     print(f"Wrote: {(out_dir / 'ios_tokens_per_second.svg').as_posix()}")
+    print(f"Wrote: {(out_dir / 'macos_tokens_per_second.svg').as_posix()}")
     print(f"Wrote: {(out_dir / 'android_tokens_per_second.svg').as_posix()}")
     print(f"Wrote: {(out_dir / 'inference_results.json').as_posix()}")
     print(f"Wrote: {(out_dir / 'inference_report.md').as_posix()}")
