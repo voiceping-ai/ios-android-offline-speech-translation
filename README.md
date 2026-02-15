@@ -1,4 +1,4 @@
-# VoicePing iOS + Android Offline Speech Translation
+# iOS + Android Offline Speech Translation
 
 Cross-platform offline speech app with transcription, translation, TTS, and history/export flows.
 This repository currently ships a focused model set per platform.
