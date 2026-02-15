@@ -28,7 +28,7 @@ Write-Host "Saved: 01_system_info.json"
 
 # --- 2. Project Structure ---
 Write-Host "`n=== 2. Project Structure ===" -ForegroundColor Cyan
-$projectDir = "C:\Dev\windows-offline-transcribe"
+$projectDir = "C:\Dev\windows-offline-speech-translation"
 if (Test-Path $projectDir) {
     $tree = Get-ChildItem -Path $projectDir -Recurse -Depth 3 |
         Where-Object { $_.FullName -notmatch '\\(bin|obj|\.vs|\.git)\\' } |

@@ -31,9 +31,14 @@ cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:\\d
 cmake --build build --config Release
 ```
 
+Or use the helper script:
+
+```powershell
+.\build.ps1 -Config Release -CMakePrefixPath "C:\\deps\\install"
+```
+
 Copy the built `OfflineSpeechTranslation.NativeTranslation.dll` (and any dependent DLLs) into:
 
 `WindowsOfflineSpeechTranslation\\libs\\runtimes\\win-x64\\`
 
 They will be copied next to the app `.exe` during build.
-

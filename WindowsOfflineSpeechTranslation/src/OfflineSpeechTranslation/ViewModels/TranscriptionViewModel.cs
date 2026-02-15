@@ -178,7 +178,18 @@ public sealed partial class TranscriptionViewModel : ObservableObject
     [RelayCommand]
     private void CopyText()
     {
-        var text = $"{_service.ConfirmedText} {_service.HypothesisText}".Trim();
+        var transcript = $"{_service.ConfirmedText} {_service.HypothesisText}".Trim();
+        var translation = $"{_service.TranslatedConfirmedText} {_service.TranslatedHypothesisText}".Trim();
+
+        var text = transcript;
+        if (!string.IsNullOrWhiteSpace(translation) &&
+            !string.Equals(translation, transcript, StringComparison.Ordinal))
+        {
+            text = transcript.Length == 0
+                ? translation
+                : $"{transcript}\n\n---\n\n{translation}";
+        }
+
         if (string.IsNullOrEmpty(text)) return;
 
         var dp = new DataPackage();

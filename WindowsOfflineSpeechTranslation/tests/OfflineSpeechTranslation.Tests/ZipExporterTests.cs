@@ -143,8 +143,8 @@ public class ZipExporterTests : IDisposable
         var zipPath = ZipExporter.Export(record, _tempDir);
         var fileName = Path.GetFileName(zipPath);
 
-        Assert.StartsWith("transcription_", fileName);
+        Assert.StartsWith("speech_translation_", fileName);
         Assert.EndsWith(".zip", fileName);
-        Assert.Matches(@"transcription_\d{8}_\d{6}\.zip", fileName);
+        Assert.Matches(@"speech_translation_\d{8}_\d{6}\.zip", fileName);
     }
 }

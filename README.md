@@ -21,6 +21,12 @@ This repository currently ships a focused model set per platform.
 
 > SenseVoice Small with ML Kit Translation and TTS. Full video: [MP4](docs/demos/android_speech_translation_demo.mp4).
 
+### Windows (Desktop)
+
+- WinUI 3 desktop app: `WindowsOfflineSpeechTranslation/`
+- Pipeline: on-device ASR (whisper.cpp / sherpa-onnx) -> offline translation (CTranslate2 wrapper) -> native TTS (Windows.Media) with WAV evidence
+- Audio sources: microphone + system audio (WASAPI loopback)
+
 ## Current Scope (Code-Accurate)
 
 ### iOS app (`OfflineTranscription`)

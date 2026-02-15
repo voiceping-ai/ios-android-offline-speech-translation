@@ -38,7 +38,7 @@
                            TextWrapping="Wrap"
                            FontSize="12"
                            Opacity="0.7"
-                           Foreground="DarkOrange"
+                           Foreground="#FFFF8C00"
                            Text="{x:Bind VM.Service.TranslationWarning, Mode=OneWay}" />
                 <TextBlock x:Name="TranslatedConfirmedTextBlock"
                            TextWrapping="Wrap"

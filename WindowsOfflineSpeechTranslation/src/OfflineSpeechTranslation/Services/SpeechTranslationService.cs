@@ -55,6 +55,7 @@ public sealed partial class SpeechTranslationService : ObservableObject, IDispos
     [ObservableProperty] private double _ttsRate = 1.0;
     [ObservableProperty] private string? _ttsVoiceId;
     [ObservableProperty] private bool _isSpeakingTts;
+    [ObservableProperty] private string? _ttsEvidenceWavPath;
     [ObservableProperty] private int _ttsStartCount;
     [ObservableProperty] private int _ttsMicGuardViolations;
     [ObservableProperty] private bool _micStoppedForTts;
@@ -93,6 +94,7 @@ public sealed partial class SpeechTranslationService : ObservableObject, IDispos
         SpeakTranslatedAudio = _prefs.SpeakTranslatedAudio;
         TtsRate = _prefs.TtsRate;
         TtsVoiceId = _prefs.TtsVoiceId;
+        TtsEvidenceWavPath = _ttsService.LatestEvidenceWavPath;
 
         _ttsService.PlaybackStateChanged += speaking =>
         {
@@ -876,8 +878,8 @@ public sealed partial class SpeechTranslationService : ObservableObject, IDispos
 
         PostUI(() =>
         {
-            TranslatedConfirmedText = NormalizeDisplayText(translatedConfirmed);
-            TranslatedHypothesisText = NormalizeDisplayText(translatedHypothesis);
+            TranslatedConfirmedText = TextDelta.NormalizeDisplayText(translatedConfirmed);
+            TranslatedHypothesisText = TextDelta.NormalizeDisplayText(translatedHypothesis);
             TranslationWarning = warning ?? _translationEngine.Warning;
             TranslationModelReady = _translationEngine.ModelReady;
             TranslationDownloadProgress = _translationEngine.DownloadProgress;
@@ -978,20 +980,11 @@ public sealed partial class SpeechTranslationService : ObservableObject, IDispos
     {
         if (!SpeakTranslatedAudio) return;
 
-        var normalized = NormalizeDisplayText(translatedConfirmed);
+        var normalized = TextDelta.NormalizeDisplayText(translatedConfirmed);
         if (string.IsNullOrWhiteSpace(normalized)) return;
 
-        var delta = normalized;
-        if (_lastSpokenTranslatedConfirmed.Length > 0 &&
-            normalized.StartsWith(_lastSpokenTranslatedConfirmed, StringComparison.Ordinal))
-        {
-            delta = NormalizeDisplayText(normalized[_lastSpokenTranslatedConfirmed.Length..]);
-        }
-
-        if (string.IsNullOrWhiteSpace(delta)) return;
-
-        var meaningfulChars = delta.Count(char.IsLetterOrDigit);
-        if (meaningfulChars < 2) return;
+        var delta = TextDelta.ComputeDelta(normalized, _lastSpokenTranslatedConfirmed);
+        if (!TextDelta.IsMeaningfulDelta(delta)) return;
 
         var micStoppedOk = false;
         try
@@ -1034,6 +1027,7 @@ public sealed partial class SpeechTranslationService : ObservableObject, IDispos
                 ct: CancellationToken.None);
 
             _lastSpokenTranslatedConfirmed = normalized;
+            PostUI(() => TtsEvidenceWavPath = _ttsService.LatestEvidenceWavPath);
         }
         catch (Exception ex)
         {
@@ -1147,19 +1141,7 @@ public sealed partial class SpeechTranslationService : ObservableObject, IDispos
         {
             TranslationSourceLanguageCode = currentTarget;
             TranslationTargetLanguageCode = currentSource;
-            ResetTranslationState(stopTts: true);
-            ScheduleTranslationUpdate();
         }
-    }
-
-    private static string NormalizeDisplayText(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return "";
-        // Collapse whitespace but preserve newlines.
-        var lines = text.Replace("\r\n", "\n").Split('\n');
-        for (int i = 0; i < lines.Length; i++)
-            lines[i] = string.Join(' ', lines[i].Split(' ', StringSplitOptions.RemoveEmptyEntries)).Trim();
-        return string.Join('\n', lines).Trim();
     }
 
     public void Dispose()

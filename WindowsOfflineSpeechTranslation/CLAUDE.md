@@ -1,4 +1,4 @@
-# Windows Offline Transcribe
+# Windows Offline Speech Translation
 
 ## Critical: No Emulators or Simulators
 

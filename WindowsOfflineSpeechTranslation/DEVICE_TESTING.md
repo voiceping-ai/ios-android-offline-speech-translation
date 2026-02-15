@@ -74,6 +74,28 @@ If you want screenshots + model/file evidence for each action (recommended for b
 - Transcribe `.wav` (16k mono), `.wav` (44.1k stereo), `.mp3`.
   - Expected: decode succeeds; transcription runs; result saved to history.
 
+### Translation (Offline)
+
+- Settings -> enable `Enable Translation` (default is on).
+- Set `Source Language = en`, `Target Language = ja`.
+- Start recording, speak English, stop.
+  - Expected: translated text populates under the Translation section.
+- Disable network after the translation model finishes downloading; repeat the same test.
+  - Expected: translation still works offline (no network required after download).
+- Missing translation native DLL (`OfflineSpeechTranslation.NativeTranslation.dll`) or missing CT2 deps:
+  - Expected: app continues transcribing; Translation shows a warning instead of crashing.
+
+### TTS (Speak Translated Audio)
+
+- Settings -> enable `Speak Translated Audio`.
+- Record a short English phrase until translation appears.
+  - Expected:
+    - The app stops capture while speaking (feedback-loop guard).
+    - After playback ends, recording auto-resumes as a fresh segment (clears text buffers).
+    - A WAV evidence file is created under `%LOCALAPPDATA%\\OfflineSpeechTranslation\\TtsEvidence\\`.
+- Install/uninstall Japanese voice packs (Windows language settings) and repeat.
+  - Expected: if Japanese voice is unavailable, TTS may fail but a fallback evidence WAV still exists.
+
 ### History / Export
 
 - Verify new transcriptions appear in History.
@@ -81,7 +103,12 @@ If you want screenshots + model/file evidence for each action (recommended for b
 - Delete a history item.
   - Expected: DB row removed and `%LOCALAPPDATA%\\OfflineSpeechTranslation\\Sessions\\{id}` deleted.
 - Export ZIP from detail view.
-  - Expected: ZIP contains `transcript.txt`, `metadata.json`, and `audio.wav` if available.
+  - Expected: ZIP contains:
+    - `transcript.txt`
+    - `translation.txt` (if available)
+    - `metadata.json`
+    - `audio.wav` (if available)
+    - `tts.wav` (if available)
 
 ### Screenshot Capture (For Bug Reports)
 

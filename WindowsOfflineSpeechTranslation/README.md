@@ -39,13 +39,21 @@ Model weights are not distributed with this repo; model licensing varies. See `N
 
 Defined in `src/OfflineSpeechTranslation/Models/TranslationModelInfo.cs`.
 
-Models are downloaded as a single `.zip`, extracted, and stored under:
+Models are downloaded and stored under:
 
 `%LOCALAPPDATA%\\OfflineSpeechTranslation\\TranslationModels\\<model-id>\\model\\`
 
-Notes:
-- The default URLs in `TranslationModelInfo` are placeholders. Update them to point to your hosted CT2 model zips.
-- Each zip should include the CT2 model files at the root plus SentencePiece tokenizers (`source.spm`/`target.spm` or `spm.model`).
+Supported download formats:
+- Multi-file (default): download the CT2 model files directly from Hugging Face `resolve/main/` URLs.
+- Zip package (optional): set `ZipUrl` in `TranslationModelInfo` to point to a single zip containing the CT2 model directory + tokenizers.
+
+Default EN <-> JA models (code-accurate):
+- `manancode/opus-mt-en-jap-ctranslate2-android`
+- `manancode/opus-mt-ja-en-ctranslate2-android`
+
+Expected extracted layout (root of the extracted model folder):
+- `model.bin`, `config.json`, `shared_vocabulary.json`
+- tokenizers: `source.spm` + `target.spm` (or a shared `spm.model`)
 
 ## Engines / Inference Methods
 

@@ -25,8 +25,19 @@ public sealed class TranslationModelDownloader
     private static string GetMarkerPath(TranslationModelInfo model) =>
         Path.Combine(GetModelDir(model), "extracted.ok");
 
-    public static bool IsModelDownloaded(TranslationModelInfo model) =>
-        File.Exists(GetMarkerPath(model));
+    public static bool IsModelDownloaded(TranslationModelInfo model)
+    {
+        if (!File.Exists(GetMarkerPath(model))) return false;
+
+        var extractedDir = GetExtractedDir(model);
+        if (!Directory.Exists(extractedDir)) return false;
+
+        // Minimal sanity check so stale markers don't cause confusing failures.
+        if (!File.Exists(Path.Combine(extractedDir, "model.bin"))) return false;
+        if (!File.Exists(Path.Combine(extractedDir, "config.json"))) return false;
+
+        return true;
+    }
 
     private static void TryDeleteFile(string path)
     {
@@ -91,40 +102,114 @@ public sealed class TranslationModelDownloader
         var modelDir = GetModelDir(model);
         Directory.CreateDirectory(modelDir);
 
-        var zipPath = Path.Combine(modelDir, "model.zip");
-        var tmpPath = zipPath + ".tmp";
-
-        if (!File.Exists(zipPath))
-        {
-            await DownloadFileWithResumeAsync(model.ZipUrl, zipPath, tmpPath, progress, ct);
-        }
-
-        // Extract to a staging folder then swap into place (safer than overwriting in-place).
         var extractedDir = GetExtractedDir(model);
-        var stagingDir = extractedDir + ".staging";
 
-        TryDeleteDirectory(stagingDir);
-        Directory.CreateDirectory(stagingDir);
-
-        // ZipFile extraction can throw if Defender has the zip locked; retry briefly.
-        for (int attempt = 0; attempt < 4; attempt++)
+        try
         {
-            try
+            if (!string.IsNullOrWhiteSpace(model.ZipUrl))
             {
-                ZipFile.ExtractToDirectory(zipPath, stagingDir, overwriteFiles: true);
-                break;
+                // Extract zip to a staging folder then swap into place (safer than overwriting in-place).
+                var stagingDir = extractedDir + ".staging";
+                TryDeleteDirectory(stagingDir);
+                Directory.CreateDirectory(stagingDir);
+
+                var zipPath = Path.Combine(modelDir, "model.zip");
+                var tmpPath = zipPath + ".tmp";
+
+                if (!File.Exists(zipPath))
+                    await DownloadFileWithResumeAsync(model.ZipUrl, zipPath, tmpPath, progress, ct);
+
+                // ZipFile extraction can throw if Defender has the zip locked; retry briefly.
+                for (int attempt = 0; attempt < 4; attempt++)
+                {
+                    try
+                    {
+                        ZipFile.ExtractToDirectory(zipPath, stagingDir, overwriteFiles: true);
+                        break;
+                    }
+                    catch (IOException) when (attempt < 3)
+                    {
+                        await Task.Delay(1000, ct);
+                    }
+                }
+
+                // Swap staging -> extracted.
+                TryDeleteDirectory(extractedDir);
+                Directory.Move(stagingDir, extractedDir);
             }
-            catch (IOException) when (attempt < 3)
+            else if (model.Files is { Count: > 0 })
             {
-                await Task.Delay(1000, ct);
+                // Download directly into the extracted dir so partial downloads can be resumed.
+                Directory.CreateDirectory(extractedDir);
+                await DownloadFilesWithResumeAsync(model.Files, extractedDir, progress, ct);
             }
+            else
+            {
+                throw new InvalidOperationException($"Translation model '{model.Id}' has no ZipUrl or Files.");
+            }
+
+            File.WriteAllText(GetMarkerPath(model), DateTime.UtcNow.ToString("O"));
+            progress?.Report(1.0);
         }
+        catch
+        {
+            // Best-effort cleanup:
+            // - zip staging dir is cleaned on the next attempt
+            // - file-based downloads keep partial .tmp files in extractedDir for resume
+            throw;
+        }
+    }
 
-        TryDeleteDirectory(extractedDir);
-        Directory.Move(stagingDir, extractedDir);
+    private static async Task DownloadFilesWithResumeAsync(
+        IReadOnlyList<ModelFile> files,
+        string destDir,
+        IProgress<double>? progress,
+        CancellationToken ct)
+    {
+        if (files.Count == 0) return;
 
-        File.WriteAllText(GetMarkerPath(model), DateTime.UtcNow.ToString("O"));
-        progress?.Report(1.0);
+        for (int i = 0; i < files.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var f = files[i];
+            var destPath = Path.Combine(destDir, f.LocalName);
+            var destParent = Path.GetDirectoryName(destPath);
+            if (!string.IsNullOrWhiteSpace(destParent))
+                Directory.CreateDirectory(destParent);
+
+            if (File.Exists(destPath))
+            {
+                try
+                {
+                    if (new FileInfo(destPath).Length > 0)
+                    {
+                        progress?.Report((i + 1) / (double)files.Count);
+                        continue;
+                    }
+                }
+                catch
+                {
+                    // If we can't stat the file, fall through to re-download.
+                }
+            }
+
+            var tmpPath = destPath + ".tmp";
+
+            IProgress<double>? scaledProgress = null;
+            if (progress != null)
+            {
+                int idx = i;
+                int count = files.Count;
+                scaledProgress = new Progress<double>(p =>
+                {
+                    // Scale current-file progress into overall [0..1].
+                    progress.Report((idx + Math.Clamp(p, 0.0, 1.0)) / count);
+                });
+            }
+
+            await DownloadFileWithResumeAsync(f.Url, destPath, tmpPath, scaledProgress, ct);
+        }
     }
 
     private static async Task DownloadFileWithResumeAsync(
@@ -197,4 +282,3 @@ public sealed class TranslationModelDownloader
         TryMoveFile(tempPath, targetPath);
     }
 }
-

@@ -163,6 +163,8 @@ public sealed class EvidenceService
                 displayName = m.DisplayName,
                 source = m.SourceLanguageCode,
                 target = m.TargetLanguageCode,
+                package = !string.IsNullOrWhiteSpace(m.ZipUrl) ? "zip" : "files",
+                files = m.Files?.Select(f => new { f.LocalName, f.Url }).ToList(),
                 downloaded = TranslationModelDownloader.IsModelDownloaded(m),
                 modelDir = TranslationModelDownloader.GetModelDir(m),
                 extractedDir = TranslationModelDownloader.GetExtractedDir(m)

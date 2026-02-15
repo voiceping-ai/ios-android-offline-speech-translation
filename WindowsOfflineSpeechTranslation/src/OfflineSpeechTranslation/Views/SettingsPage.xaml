@@ -87,7 +87,7 @@
             <ProgressBar Value="{x:Bind Service.TranslationDownloadProgress, Mode=OneWay}"
                          Maximum="1.0" />
             <TextBlock FontSize="12" Opacity="0.6"
-                       Foreground="DarkOrange"
+                       Foreground="#FFFF8C00"
                        Text="{x:Bind Service.TranslationWarning, Mode=OneWay}" />
 
             <ToggleSwitch Header="Speak Translated Audio"
@@ -101,6 +101,9 @@
 
             <TextBox Header="TTS Voice Id (optional)"
                      Text="{x:Bind Service.TtsVoiceId, Mode=TwoWay}" />
+
+            <TextBlock FontSize="12" Opacity="0.6" TextWrapping="Wrap"
+                       Text="{x:Bind Service.TtsEvidenceWavPath, Mode=OneWay}" />
 
             <Border Height="1" Margin="0,8" Background="#33000000" />
 

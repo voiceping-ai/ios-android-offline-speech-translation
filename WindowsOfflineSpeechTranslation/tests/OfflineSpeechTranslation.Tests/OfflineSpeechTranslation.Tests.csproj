@@ -35,6 +35,7 @@
     <Compile Include="..\..\src\OfflineSpeechTranslation\Utilities\WavWriter.cs" Link="Utilities\WavWriter.cs" />
     <Compile Include="..\..\src\OfflineSpeechTranslation\Utilities\SessionFileManager.cs" Link="Utilities\SessionFileManager.cs" />
     <Compile Include="..\..\src\OfflineSpeechTranslation\Utilities\ZipExporter.cs" Link="Utilities\ZipExporter.cs" />
+    <Compile Include="..\..\src\OfflineSpeechTranslation\Utilities\TextDelta.cs" Link="Utilities\TextDelta.cs" />
     <Compile Include="..\..\src\OfflineSpeechTranslation\Utilities\EvidenceSession.cs" Link="Utilities\EvidenceSession.cs" />
     <Compile Include="..\..\src\OfflineSpeechTranslation\Utilities\ModelEvidence.cs" Link="Utilities\ModelEvidence.cs" />
   </ItemGroup>
