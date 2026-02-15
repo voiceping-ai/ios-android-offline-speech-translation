@@ -122,9 +122,16 @@ final class AppleSpeechEngine: ASREngine {
             ))
         }
         pcmBuffer.frameLength = AVAudioFrameCount(audioArray.count)
-        let channelData = pcmBuffer.floatChannelData![0]
+        guard let floatChannels = pcmBuffer.floatChannelData else {
+            throw AppError.transcriptionFailed(underlying: NSError(
+                domain: "AppleSpeechEngine", code: -6,
+                userInfo: [NSLocalizedDescriptionKey: "PCM buffer has no float channel data"]
+            ))
+        }
+        let channelData = floatChannels[0]
         audioArray.withUnsafeBufferPointer { ptr in
-            channelData.update(from: ptr.baseAddress!, count: audioArray.count)
+            guard let baseAddr = ptr.baseAddress else { return }
+            channelData.update(from: baseAddr, count: audioArray.count)
         }
 
         request.append(pcmBuffer)

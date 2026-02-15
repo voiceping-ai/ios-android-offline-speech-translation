@@ -1,8 +1,12 @@
 import XCTest
 @testable import OfflineTranscription
 
-/// Tests that emulate audio feeding and the eager confirmation pipeline.
+/// Tests that emulate audio feeding and the transcription pipeline.
 /// Uses testFeedResult() to exercise processTranscriptionResult directly.
+///
+/// NOTE: The translation project disables eager segment confirmation
+/// (SenseVoice returns a single segment whose text changes every cycle).
+/// All segments go to `unconfirmedSegments`; `confirmedSegments` stays empty.
 @MainActor
 final class TranscriptionPipelineTests: XCTestCase {
 
@@ -12,7 +16,6 @@ final class TranscriptionPipelineTests: XCTestCase {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: "selectedModelVariant")
         service = WhisperService()
-        service.enableEagerMode = true
     }
 
     override func tearDown() {
@@ -32,8 +35,9 @@ final class TranscriptionPipelineTests: XCTestCase {
         )
     }
 
-    // MARK: - Iteration 1: First result goes to unconfirmed
-    func testFirstResultUnconfirmed() {
+    // MARK: - Basic feeding
+
+    func testFirstResultGoesToUnconfirmed() {
         service.testFeedResult(result([seg(" Hello", 0, 1), seg(" world", 1, 2)]))
         XCTAssertEqual(service.confirmedSegments.count, 0)
         XCTAssertEqual(service.unconfirmedSegments.count, 2)
@@ -41,19 +45,19 @@ final class TranscriptionPipelineTests: XCTestCase {
         XCTAssertTrue(service.hypothesisText.contains("Hello"))
     }
 
-    // MARK: - Iteration 2: Matching segments confirmed
-    func testMatchingSegmentsConfirmed() {
+    func testSecondResultReplacesFirst() {
         service.testFeedResult(result([seg(" Hello", 0, 1), seg(" world", 1, 2)]))
         service.testFeedResult(result([seg(" Hello", 0, 1), seg(" there", 1, 2.5)]))
 
-        XCTAssertEqual(service.confirmedSegments.count, 1)
-        XCTAssertEqual(service.confirmedSegments[0].text, " Hello")
-        XCTAssertEqual(service.unconfirmedSegments.count, 1)
-        XCTAssertEqual(service.unconfirmedSegments[0].text, " there")
+        // No eager confirmation in translation project — all in unconfirmed
+        XCTAssertEqual(service.confirmedSegments.count, 0)
+        XCTAssertEqual(service.unconfirmedSegments.count, 2)
+        XCTAssertTrue(service.hypothesisText.contains("Hello"))
+        XCTAssertTrue(service.hypothesisText.contains("there"))
+        XCTAssertFalse(service.hypothesisText.contains("world"))
     }
 
-    // MARK: - Iteration 3: Multiple matches confirmed
-    func testMultipleMatchesConfirmed() {
+    func testMultipleFeedsReplaceUnconfirmed() {
         service.testFeedResult(result([
             seg(" The", 0, 0.5), seg(" quick", 0.5, 1), seg(" brown", 1, 1.5),
         ]))
@@ -61,14 +65,12 @@ final class TranscriptionPipelineTests: XCTestCase {
             seg(" The", 0, 0.5), seg(" quick", 0.5, 1), seg(" brown", 1, 1.5), seg(" fox", 1.5, 2),
         ]))
 
-        XCTAssertEqual(service.confirmedSegments.count, 3)
-        XCTAssertEqual(service.unconfirmedSegments.count, 1)
-        XCTAssertTrue(service.confirmedText.contains("quick"))
+        XCTAssertEqual(service.confirmedSegments.count, 0)
+        XCTAssertEqual(service.unconfirmedSegments.count, 4)
         XCTAssertTrue(service.hypothesisText.contains("fox"))
     }
 
-    // MARK: - Iteration 4: No match → nothing confirmed
-    func testNoMatchNothingConfirmed() {
+    func testCompletelyDifferentResultReplaces() {
         service.testFeedResult(result([seg(" Hello", 0, 1)]))
         service.testFeedResult(result([seg(" Goodbye", 0, 1)]))
 
@@ -77,7 +79,8 @@ final class TranscriptionPipelineTests: XCTestCase {
         XCTAssertEqual(service.unconfirmedSegments[0].text, " Goodbye")
     }
 
-    // MARK: - Iteration 5: Empty result
+    // MARK: - Empty result
+
     func testEmptyResult() {
         service.testFeedResult(result([]))
         XCTAssertEqual(service.confirmedSegments.count, 0)
@@ -85,39 +88,19 @@ final class TranscriptionPipelineTests: XCTestCase {
         XCTAssertEqual(service.fullTranscriptionText, "")
     }
 
-    // MARK: - Iteration 6: Eager mode disabled
-    func testEagerModeDisabled() {
-        service.enableEagerMode = false
-        let s = [seg(" Hello", 0, 1)]
-        service.testFeedResult(result(s))
-        service.testFeedResult(result(s))
+    // MARK: - Progressive transcription
 
-        XCTAssertEqual(service.confirmedSegments.count, 0, "No confirmation when eager mode off")
-        XCTAssertEqual(service.unconfirmedSegments.count, 1)
-    }
-
-    // MARK: - Iteration 7: Progressive transcription
-    func testProgressiveTranscription() {
+    func testProgressiveGrowth() {
         service.testFeedResult(result([seg(" The quick", 0, 1)]))
         XCTAssertEqual(service.fullTranscriptionText, "The quick")
 
         service.testFeedResult(result([seg(" The quick", 0, 1), seg(" brown", 1, 1.5)]))
-        XCTAssertEqual(service.confirmedSegments.count, 1)
-
-        service.testFeedResult(result([seg(" brown", 1, 1.5), seg(" fox", 1.5, 2)]))
-        XCTAssertEqual(service.confirmedSegments.count, 2)
-        XCTAssertTrue(service.fullTranscriptionText.contains("fox"))
+        XCTAssertTrue(service.fullTranscriptionText.contains("quick"))
+        XCTAssertTrue(service.fullTranscriptionText.contains("brown"))
     }
 
-    // MARK: - Iteration 8: Whitespace trimming
-    func testWhitespaceTrimmedComparison() {
-        service.testFeedResult(result([seg(" Hello ", 0, 1)]))
-        service.testFeedResult(result([seg("  Hello  ", 0, 1), seg(" world", 1, 2)]))
+    // MARK: - Stress test
 
-        XCTAssertEqual(service.confirmedSegments.count, 1, "Should match despite whitespace")
-    }
-
-    // MARK: - Iteration 9: Stress test with 20 iterations
     func testRapidSuccessiveResults() {
         for i in 0..<20 {
             var segs: [ASRSegment] = []
@@ -129,62 +112,35 @@ final class TranscriptionPipelineTests: XCTestCase {
 
         let total = service.confirmedSegments.count + service.unconfirmedSegments.count
         XCTAssertGreaterThan(total, 0)
-        XCTAssertGreaterThan(service.confirmedSegments.count, 0)
+        // Last feed had 20 segments (word0..word19)
+        XCTAssertEqual(service.unconfirmedSegments.count, 20)
     }
 
-    // MARK: - Chunk boundary finalization
+    // MARK: - Clear and session isolation
 
-    func testChunkBoundaryFinalizesHypothesis() {
-        // Feed unconfirmed segments that will be finalized at chunk boundary
-        service.testFeedResult(result([seg(" chunk one text", 0, 10)]))
-        XCTAssertEqual(service.confirmedSegments.count, 0)
-        XCTAssertEqual(service.unconfirmedSegments.count, 1)
-
-        // Feed same text again → confirms it
-        service.testFeedResult(result([seg(" chunk one text", 0, 10), seg(" more", 10, 14)]))
-        XCTAssertEqual(service.confirmedSegments.count, 1)
-        XCTAssertEqual(service.unconfirmedSegments.count, 1)
-
-        // fullTranscriptionText should include both
-        XCTAssertTrue(service.fullTranscriptionText.contains("chunk one text"))
-        XCTAssertTrue(service.fullTranscriptionText.contains("more"))
-    }
-
-    func testMaxChunkSecondsIs15() {
-        // Verify the chunk size was reduced to 15s (matching Android)
-        // We can test this indirectly: after feeding 16s of confirmed text,
-        // the chunk should finalize via processTranscriptionResult's sliceOffset logic
-        // For now, just verify clear resets completedChunksText
-        service.testFeedResult(result([seg(" text", 0, 14)]))
-        service.testFeedResult(result([seg(" text", 0, 14)]))
-        XCTAssertEqual(service.confirmedSegments.count, 1)
-
-        service.clearTranscription()
-        XCTAssertEqual(service.fullTranscriptionText, "")
-    }
-
-    // MARK: - Start/stop state isolation
-
-    func testStartStopPreservesNoState() {
-        // Session 1
+    func testClearResetsAllState() {
         service.testFeedResult(result([seg(" Session one", 0, 5)]))
-        service.testFeedResult(result([seg(" Session one", 0, 5), seg(" text", 5, 8)]))
-        XCTAssertGreaterThan(service.confirmedSegments.count, 0)
         XCTAssertTrue(service.fullTranscriptionText.contains("Session one"))
 
-        // Stop + restart
         service.clearTranscription()
 
-        // Verify complete cleanup
         XCTAssertEqual(service.confirmedSegments.count, 0)
         XCTAssertEqual(service.unconfirmedSegments.count, 0)
         XCTAssertEqual(service.confirmedText, "")
         XCTAssertEqual(service.hypothesisText, "")
         XCTAssertEqual(service.fullTranscriptionText, "")
+    }
 
-        // Session 2 should be independent
-        service.testFeedResult(result([seg(" Session two", 0, 3)]))
+    func testClearBetweenSessions() {
+        service.testFeedResult(result([seg(" Session one", 0, 2)]))
+        XCTAssertTrue(service.fullTranscriptionText.contains("Session one"))
+
+        service.clearTranscription()
+        XCTAssertEqual(service.fullTranscriptionText, "")
+
+        service.testFeedResult(result([seg(" Session two", 0, 2)]))
         XCTAssertEqual(service.unconfirmedSegments.count, 1)
+        XCTAssertEqual(service.unconfirmedSegments[0].text, " Session two")
         XCTAssertFalse(service.fullTranscriptionText.contains("Session one"))
         XCTAssertTrue(service.fullTranscriptionText.contains("Session two"))
     }
@@ -192,8 +148,7 @@ final class TranscriptionPipelineTests: XCTestCase {
     func testFiveRapidClearCycles() {
         for cycle in 0..<5 {
             service.testFeedResult(result([seg(" Cycle \(cycle)", 0, 2)]))
-            service.testFeedResult(result([seg(" Cycle \(cycle)", 0, 2), seg(" data", 2, 4)]))
-            XCTAssertGreaterThan(service.confirmedSegments.count, 0)
+            XCTAssertTrue(service.fullTranscriptionText.contains("Cycle \(cycle)"))
 
             service.clearTranscription()
             XCTAssertEqual(service.fullTranscriptionText, "",
@@ -201,19 +156,24 @@ final class TranscriptionPipelineTests: XCTestCase {
         }
     }
 
-    // MARK: - Iteration 10: Clear between sessions
-    func testClearBetweenSessions() {
-        service.testFeedResult(result([seg(" Session one", 0, 2)]))
-        service.testFeedResult(result([seg(" Session one", 0, 2), seg(" continues", 2, 3)]))
-        XCTAssertGreaterThan(service.confirmedSegments.count, 0)
+    // MARK: - Language detection
 
-        service.clearTranscription()
-        XCTAssertEqual(service.confirmedSegments.count, 0)
-        XCTAssertEqual(service.unconfirmedSegments.count, 0)
-        XCTAssertEqual(service.fullTranscriptionText, "")
+    func testLanguageDetectionUpdated() {
+        service.testFeedResult(ASRResult(text: "Bonjour", segments: [seg(" Bonjour", 0, 1)], language: "fr"))
+        XCTAssertEqual(service.detectedLanguage, "fr")
 
-        service.testFeedResult(result([seg(" Session two", 0, 2)]))
-        XCTAssertEqual(service.unconfirmedSegments.count, 1)
-        XCTAssertEqual(service.unconfirmedSegments[0].text, " Session two")
+        service.testFeedResult(ASRResult(text: "Hello", segments: [seg(" Hello", 0, 1)], language: "en"))
+        XCTAssertEqual(service.detectedLanguage, "en")
+    }
+
+    // MARK: - Hypothesis text
+
+    func testHypothesisTextUpdates() {
+        service.testFeedResult(result([seg(" first pass", 0, 2)]))
+        XCTAssertTrue(service.hypothesisText.contains("first pass"))
+
+        service.testFeedResult(result([seg(" second pass", 0, 2)]))
+        XCTAssertTrue(service.hypothesisText.contains("second pass"))
+        XCTAssertFalse(service.hypothesisText.contains("first pass"))
     }
 }

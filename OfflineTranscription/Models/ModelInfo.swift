@@ -73,7 +73,13 @@ struct ModelInfo: Identifiable, Hashable {
         ),
     ]
 
-    static let defaultModel = availableModels.first { $0.id == "sensevoice-small" }!
+    static let defaultModel: ModelInfo = {
+        if let model = availableModels.first(where: { $0.id == "sensevoice-small" }) {
+            return model
+        }
+        NSLog("[ModelInfo] WARNING: sensevoice-small not found in catalog, falling back to first model")
+        return availableModels[0]
+    }()
     private static let familyDisplayOrder: [ModelFamily] = [.senseVoice, .appleSpeech]
     private static let cachedModelsByFamily: [(family: ModelFamily, models: [ModelInfo])] = {
         let grouped = Dictionary(grouping: availableModels, by: \.family)

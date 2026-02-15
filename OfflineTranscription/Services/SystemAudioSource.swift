@@ -19,6 +19,17 @@ final class SystemAudioSource {
     private static let maxAudioSamples = 28_800_000 // ~30 min at 16kHz
     private static let maxEnergyFrames = 60_000
 
+    deinit {
+        // Guarantee Darwin notification cleanup to prevent use-after-free
+        // if deallocated without an explicit stop() call.
+        pollTimer?.invalidate()
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        CFNotificationCenterRemoveEveryObserver(
+            center,
+            Unmanaged.passUnretained(self).toOpaque()
+        )
+    }
+
     func start() {
         guard !isActive else { return }
 
