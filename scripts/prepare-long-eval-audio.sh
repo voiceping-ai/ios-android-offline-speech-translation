@@ -13,7 +13,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-INPUT_WAV="${1:-$PROJECT_DIR/artifacts/benchmarks/seed_en_eval.wav}"
+if [ $# -ge 1 ]; then
+    INPUT_WAV="$1"
+else
+    # Prefer an explicit seed fixture if present, otherwise fall back to the repo's
+    # shipped test audio asset.
+    INPUT_WAV="$PROJECT_DIR/artifacts/benchmarks/seed_en_eval.wav"
+    if [ ! -f "$INPUT_WAV" ]; then
+        for candidate in \
+            "$PROJECT_DIR/OfflineTranscription/Resources/test_speech.wav" \
+            "$PROJECT_DIR/VoicePingAndroidOfflineTranscribe/app/src/main/assets/test_speech.wav" \
+            "$PROJECT_DIR/VoicePingIOSAndroidOfflineSpeechTranslationAndroid/app/src/main/assets/test_speech.wav"; do
+            if [ -f "$candidate" ]; then
+                INPUT_WAV="$candidate"
+                break
+            fi
+        done
+    fi
+fi
 OUTPUT_WAV="${2:-$PROJECT_DIR/artifacts/benchmarks/long_en_eval.wav}"
 TARGET_SECONDS="${TARGET_SECONDS:-30}"
 COPY_TO_TMP="${COPY_TO_TMP:-1}"

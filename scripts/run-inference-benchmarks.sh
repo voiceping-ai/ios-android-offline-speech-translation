@@ -30,9 +30,7 @@ echo "Run Android:    $RUN_ANDROID"
 echo "iOS XCUITest:   $IOS_XCUITEST"
 echo ""
 
-TARGET_SECONDS="$TARGET_SECONDS" "$SCRIPT_DIR/prepare-long-eval-audio.sh" \
-    "$PROJECT_DIR/artifacts/benchmarks/seed_en_eval.wav" \
-    "$AUDIO_FIXTURE"
+TARGET_SECONDS="$TARGET_SECONDS" "$SCRIPT_DIR/prepare-long-eval-audio.sh"
 
 if [ "$RUN_IOS" = "1" ]; then
     echo ""
