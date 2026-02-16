@@ -5,6 +5,14 @@
 Cross-platform offline speech app with transcription, translation, TTS, and history/export flows.
 This repository currently ships a focused model set per platform.
 
+### Benchmark — iOS (iPad Pro 3rd gen, A12X)
+
+![iOS Translation — ASR Speed](docs/ios_tokens_per_second.svg)
+
+### Benchmark — Android (Samsung Galaxy S10)
+
+![Android Translation — ASR Speed](docs/android_tokens_per_second.svg)
+
 ### iOS (iPad Pro 3rd gen)
 
 | Home | Transcription + Translation | Demo |

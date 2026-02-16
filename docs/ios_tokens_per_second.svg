@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="200" viewBox="-80 0 1000 200">
+<defs>
+  <linearGradient id="g-sherpa" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#34d399"/><stop offset="100%" stop-color="#059669"/>
+  </linearGradient>
+  <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#8b5cf6"/>
+  </linearGradient>
+</defs>
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, sans-serif; }
+</style>
+
+<!-- Card -->
+<rect x="-80" width="1000" height="200" rx="12" fill="white"/>
+<rect x="-79" y="1" width="998" height="198" rx="11" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<rect x="-79" y="1" width="998" height="5" rx="11" fill="url(#accent)" style="clip-path: inset(0 0 0 0 round 11px 11px 0 0)"/>
+
+<!-- Title -->
+<text x="270" y="34" font-size="18" font-weight="700" fill="#111827">iOS Translation — ASR Speed (tok/s)</text>
+<text x="270" y="52" font-size="11" fill="#9ca3af">iPad Pro 3rd gen (A12X) · 30 s English audio · SenseVoice only</text>
+
+<!-- Grid (0, 5, 10, 15, 20) scale: 560/23.59 = 23.74 -->
+<line x1="270" y1="66" x2="270" y2="98" stroke="#e5e7eb" stroke-width="1"/>
+<line x1="389" y1="66" x2="389" y2="98" stroke="#f1f5f9" stroke-width="1"/>
+<line x1="507" y1="66" x2="507" y2="98" stroke="#f1f5f9" stroke-width="1"/>
+<line x1="626" y1="66" x2="626" y2="98" stroke="#f1f5f9" stroke-width="1"/>
+<line x1="745" y1="66" x2="745" y2="98" stroke="#f1f5f9" stroke-width="1"/>
+
+<!-- X-axis -->
+<line x1="270" y1="98" x2="840" y2="98" stroke="#e5e7eb" stroke-width="1"/>
+<text x="270" y="114" text-anchor="middle" font-size="9" fill="#9ca3af">0</text>
+<text x="389" y="114" text-anchor="middle" font-size="9" fill="#9ca3af">5</text>
+<text x="507" y="114" text-anchor="middle" font-size="9" fill="#9ca3af">10</text>
+<text x="626" y="114" text-anchor="middle" font-size="9" fill="#9ca3af">15</text>
+<text x="745" y="114" text-anchor="middle" font-size="9" fill="#9ca3af">20</text>
+<text x="850" y="114" font-size="9" fill="#b0b8c4">tok/s &#x2192;</text>
+
+<!-- Row 0: SenseVoice Small — 23.6 tok/s -->
+<text x="260" y="87" text-anchor="end" font-size="11" fill="#374151">SenseVoice Small</text>
+<rect x="270" y="72" width="560" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="836" y="87" font-size="10" font-weight="600" fill="#1f2937">23.6 tok/s</text>
+
+<!-- Legend -->
+<circle cx="270" cy="146" r="5" fill="#059669"/>
+<text x="280" y="150" font-size="10" fill="#6b7280">sherpa-onnx Offline (ONNX Runtime)</text>
+
+<!-- Info -->
+<text x="270" y="180" font-size="9" fill="#c4cad2">1 of 3 models benchmarked · RTF 0.08 · Feb 2026</text>
+</svg>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="230" viewBox="-80 0 1000 230">
+<defs>
+  <linearGradient id="g-sherpa" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#34d399"/><stop offset="100%" stop-color="#059669"/>
+  </linearGradient>
+  <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#06b6d4"/>
+  </linearGradient>
+</defs>
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, sans-serif; }
+</style>
+
+<!-- Card -->
+<rect x="-80" width="1000" height="230" rx="12" fill="white"/>
+<rect x="-79" y="1" width="998" height="228" rx="11" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<rect x="-79" y="1" width="998" height="5" rx="11" fill="url(#accent)" style="clip-path: inset(0 0 0 0 round 11px 11px 0 0)"/>
+
+<!-- Title -->
+<text x="270" y="34" font-size="18" font-weight="700" fill="#111827">Android Translation — ASR Speed (tok/s)</text>
+<text x="270" y="52" font-size="11" fill="#9ca3af">Samsung Galaxy · 30 s English audio · sorted by throughput</text>
+
+<!-- Grid (0, 10, 20, 30) scale: 560/33.63 = 16.65 -->
+<line x1="270" y1="66" x2="270" y2="128" stroke="#e5e7eb" stroke-width="1"/>
+<line x1="436" y1="66" x2="436" y2="128" stroke="#f1f5f9" stroke-width="1"/>
+<line x1="603" y1="66" x2="603" y2="128" stroke="#f1f5f9" stroke-width="1"/>
+<line x1="770" y1="66" x2="770" y2="128" stroke="#f1f5f9" stroke-width="1"/>
+
+<!-- X-axis -->
+<line x1="270" y1="128" x2="840" y2="128" stroke="#e5e7eb" stroke-width="1"/>
+<text x="270" y="144" text-anchor="middle" font-size="9" fill="#9ca3af">0</text>
+<text x="436" y="144" text-anchor="middle" font-size="9" fill="#9ca3af">10</text>
+<text x="603" y="144" text-anchor="middle" font-size="9" fill="#9ca3af">20</text>
+<text x="770" y="144" text-anchor="middle" font-size="9" fill="#9ca3af">30</text>
+<text x="850" y="144" font-size="9" fill="#b0b8c4">tok/s &#x2192;</text>
+
+<!-- Row 0: SenseVoice Small — 33.6 tok/s -->
+<text x="260" y="87" text-anchor="end" font-size="11" fill="#374151">SenseVoice Small</text>
+<rect x="270" y="72" width="560" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="836" y="87" font-size="10" font-weight="600" fill="#1f2937">33.6 tok/s</text>
+
+<!-- Row 1: Parakeet TDT v3 — 19.8 tok/s -->
+<rect x="-80" y="98" width="1000" height="30" fill="#f8fafc"/>
+<text x="260" y="117" text-anchor="end" font-size="11" fill="#374151">Parakeet TDT v3</text>
+<rect x="270" y="102" width="330" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="606" y="117" font-size="10" font-weight="600" fill="#1f2937">19.8 tok/s</text>
+
+<!-- Legend -->
+<circle cx="270" cy="172" r="5" fill="#059669"/>
+<text x="280" y="176" font-size="10" fill="#6b7280">sherpa-onnx Offline (ONNX Runtime)</text>
+
+<!-- Info -->
+<text x="270" y="210" font-size="9" fill="#c4cad2">2 of 5 models benchmarked · Feb 2026</text>
+</svg>
